@@ -1,0 +1,5 @@
+name: Context-Aware AI PR Reviewer
+description: Minimal TypeScript GitHub Action scaffold for pull request review startup.
+runs:
+  using: node20
+  main: dist/src/main.js
