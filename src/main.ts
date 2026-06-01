@@ -1,9 +1,10 @@
 import { createLogger, type Logger } from './utils/logger';
 import { getErrorMessage } from './utils/errors';
+import type { PullRequestContext } from './github/pr';
 
 export interface RunOptions {
   logger?: Logger;
-  startup?: () => Promise<void>;
+  startup?: () => Promise<PullRequestContext | void>;
 }
 
 async function defaultStartup(): Promise<void> {

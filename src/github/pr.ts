@@ -1,0 +1,207 @@
+import type {
+  PullRequestFilesClient,
+  PullRequestFilesRequest
+} from './client';
+
+const FILES_PER_PAGE = 100;
+
+export interface GitHubActionContextLike {
+  repo: {
+    owner: string;
+    repo: string;
+  };
+  payload: {
+    pull_request?: {
+      number: number;
+      title: string;
+      body?: string | null;
+      user?: {
+        login?: string;
+      };
+      base: {
+        ref: string;
+        sha: string;
+      };
+      head: {
+        ref: string;
+        sha: string;
+      };
+    };
+  };
+}
+
+export interface PullRequestMetadata {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  title: string;
+  body: string;
+  author: string;
+  base: {
+    ref: string;
+    sha: string;
+  };
+  head: {
+    ref: string;
+    sha: string;
+  };
+}
+
+export interface GitHubPullRequestFileApiResponse {
+  filename: string;
+  status: 'added' | 'modified' | 'removed' | 'renamed' | 'copied' | 'changed';
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+export type PullRequestChangedFile =
+  | PullRequestTextPatchFile
+  | PullRequestMissingPatchFile
+  | PullRequestDeletedFile;
+
+export interface PullRequestBaseChangedFile {
+  filename: string;
+  status: GitHubPullRequestFileApiResponse['status'];
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch: string | null;
+}
+
+export interface PullRequestTextPatchFile extends PullRequestBaseChangedFile {
+  kind: 'text_patch';
+  patch: string;
+}
+
+export interface PullRequestMissingPatchFile extends PullRequestBaseChangedFile {
+  kind: 'missing_patch';
+  patch: null;
+}
+
+export interface PullRequestDeletedFile extends PullRequestBaseChangedFile {
+  kind: 'deleted';
+  patch: null;
+}
+
+export interface PullRequestContext {
+  metadata: PullRequestMetadata;
+  files: PullRequestChangedFile[];
+}
+
+export interface CollectPullRequestContextOptions {
+  context: GitHubActionContextLike;
+  client: GitHubClient;
+}
+
+export type GitHubClient = PullRequestFilesClient<GitHubPullRequestFileApiResponse>;
+
+export function getPullRequestMetadata(
+  context: GitHubActionContextLike
+): PullRequestMetadata {
+  const pullRequest = context.payload.pull_request;
+
+  if (!pullRequest) {
+    throw new Error('Pull request payload is missing from the GitHub Action context.');
+  }
+
+  return {
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pullNumber: pullRequest.number,
+    title: pullRequest.title,
+    body: pullRequest.body ?? '',
+    author: pullRequest.user?.login ?? 'unknown',
+    base: {
+      ref: pullRequest.base.ref,
+      sha: pullRequest.base.sha
+    },
+    head: {
+      ref: pullRequest.head.ref,
+      sha: pullRequest.head.sha
+    }
+  };
+}
+
+export async function collectPullRequestContext(
+  options: CollectPullRequestContextOptions
+): Promise<PullRequestContext> {
+  const metadata = getPullRequestMetadata(options.context);
+  const files = await fetchAllPullRequestFiles({
+    client: options.client,
+    metadata
+  });
+
+  return {
+    metadata,
+    files
+  };
+}
+
+async function fetchAllPullRequestFiles(options: {
+  client: GitHubClient;
+  metadata: PullRequestMetadata;
+}): Promise<PullRequestChangedFile[]> {
+  const files: PullRequestChangedFile[] = [];
+  let page = 1;
+
+  while (true) {
+    const request: PullRequestFilesRequest = {
+      owner: options.metadata.owner,
+      repo: options.metadata.repo,
+      pullNumber: options.metadata.pullNumber,
+      page,
+      perPage: FILES_PER_PAGE
+    };
+    const response = await options.client.listPullRequestFiles(request);
+
+    for (const file of response.data) {
+      files.push(classifyPullRequestFile(file));
+    }
+
+    if (response.data.length < FILES_PER_PAGE) {
+      return files;
+    }
+
+    page += 1;
+  }
+}
+
+function classifyPullRequestFile(
+  file: GitHubPullRequestFileApiResponse
+): PullRequestChangedFile {
+  if (file.status === 'removed') {
+    return {
+      filename: file.filename,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      changes: file.changes,
+      kind: 'deleted',
+      patch: null
+    };
+  }
+
+  if (typeof file.patch === 'string') {
+    return {
+      filename: file.filename,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      changes: file.changes,
+      kind: 'text_patch',
+      patch: file.patch
+    };
+  }
+
+  return {
+    filename: file.filename,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    changes: file.changes,
+    kind: 'missing_patch',
+    patch: null
+  };
+}
