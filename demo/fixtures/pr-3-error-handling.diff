@@ -1,0 +1,22 @@
+diff --git a/src/api/saveProfile.ts b/src/api/saveProfile.ts
+index 4dc9a2e..f12a8b7 100644
+--- a/src/api/saveProfile.ts
++++ b/src/api/saveProfile.ts
+@@ -22,13 +22,10 @@ export async function saveProfile(input: ProfileInput): Promise<Profile> {
+-  const response = await fetch('/api/profile', {
+-    method: 'POST',
+-    headers: { 'Content-Type': 'application/json' },
+-    body: JSON.stringify(input)
+-  });
+-
+-  if (!response.ok) {
+-    throw new Error('Failed to save profile');
+-  }
++  const response = await fetch('/api/profile', {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(input)
++  });
+ 
+   return response.json();
+ }

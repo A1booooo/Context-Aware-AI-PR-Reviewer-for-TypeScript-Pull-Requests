@@ -76,3 +76,14 @@ Notes:
 - `max_files` limits the included reviewable files after diff filtering.
 - `max_patch_chars_per_file` controls patch truncation for included files.
 - `include_full_file_context` and `review.max_inline_comments` are parsed and validated only in this task.
+
+## Demo Fixtures
+
+Task 11 adds curated review fixtures under `demo/fixtures/` for four common PR risk patterns:
+
+- auth bug
+- React hook stale closure
+- missing error handling
+- unsafe token handling
+
+Each fixture includes a `.diff` file and a matching `.expected.json` file that is validated against the current structured review parser in `test/unit/fixtures/demoFixtures.test.ts`.

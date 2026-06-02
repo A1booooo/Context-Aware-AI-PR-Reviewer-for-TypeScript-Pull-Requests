@@ -1,0 +1,19 @@
+diff --git a/src/components/LivePreview.tsx b/src/components/LivePreview.tsx
+index 5c21d9a..6efb431 100644
+--- a/src/components/LivePreview.tsx
++++ b/src/components/LivePreview.tsx
+@@ -18,11 +18,11 @@ export function LivePreview({
+-  useEffect(() => {
+-    syncDraft(draft);
+-  }, [draft, syncDraft]);
++  useEffect(() => {
++    syncDraft(draft);
++  }, []);
+ 
+   return (
+     <PreviewPanel
+       draft={draft}
+       onChange={setDraft}
+     />
+   );
+ }

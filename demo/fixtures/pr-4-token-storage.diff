@@ -1,0 +1,15 @@
+diff --git a/src/auth/tokenStorage.ts b/src/auth/tokenStorage.ts
+index 31c4d22..74eac98 100644
+--- a/src/auth/tokenStorage.ts
++++ b/src/auth/tokenStorage.ts
+@@ -6,10 +6,12 @@ export function persistAccessToken(token: string): void {
+-  sessionStorage.setItem('access_token', token);
++  localStorage.setItem('access_token', token);
++  window.__debugToken = token;
+ }
+ 
+ export function clearAccessToken(): void {
+-  sessionStorage.removeItem('access_token');
++  localStorage.removeItem('access_token');
++  window.__debugToken = '';
+ }
