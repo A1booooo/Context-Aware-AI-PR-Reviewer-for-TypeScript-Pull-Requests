@@ -27,7 +27,6 @@ Cover these implemented behaviors:
 
 Do not claim in the demo:
 
-- that live GitHub Actions startup wiring is complete
 - that the Action already supports non-GitHub platforms
 - that a recorded video is included in the repository
 
@@ -57,13 +56,15 @@ Explain the narrow claim:
 - this project is an AI review summary layer for PRs
 - it complements `ESLint`, `TypeScript`, `CodeQL`, and `reviewdog`
 - it is strongest when used as a context-aware reviewer over changed code
-- the stable core path today is summary publishing, not full marketplace-ready runtime wiring
+- the stable core path today is a real GitHub `pull_request` runtime plus a deterministic summary loop
 
 ### Part 2: Show The Architecture
 
 Point to:
 
 - [`src/main.ts`](/E:/牛牛/src/main.ts)
+- [`src/github/pr.ts`](/E:/牛牛/src/github/pr.ts)
+- [`src/github/client.ts`](/E:/牛牛/src/github/client.ts)
 - [`src/diff/filterFiles.ts`](/E:/牛牛/src/diff/filterFiles.ts)
 - [`src/context/buildReviewContext.ts`](/E:/牛牛/src/context/buildReviewContext.ts)
 - [`src/llm/client.ts`](/E:/牛牛/src/llm/client.ts)
@@ -73,6 +74,7 @@ Point to:
 
 Key talking point:
 
+- GitHub `pull_request` runtime startup now collects real PR context before the review pipeline begins
 - summary publication is deterministic and marker-based
 - inline publication is conditional and best-effort
 
@@ -187,6 +189,11 @@ Where to show it:
 
 Also explain non-inline degradation paths:
 
+- non-`pull_request` events are skipped
+- missing `GITHUB_EVENT_PATH`
+- invalid GitHub event payload JSON
+- missing PR payload metadata
+- missing `GITHUB_TOKEN` for changed-file collection
 - missing OpenAI API key
 - timeout
 - rate limit
@@ -196,7 +203,7 @@ Also explain non-inline degradation paths:
 
 Result:
 
-- summary status becomes `skipped` or `degraded`
+- runtime either skips safely, fails clearly, or reaches summary status `skipped` / `degraded` depending on where the problem occurs
 - raw model output is not published
 
 Where to show it:
@@ -225,7 +232,8 @@ Why this works:
 
 Be explicit about these risks during the demo:
 
-- the current checked-in action entrypoint is not yet fully wired for live PR collection
+- the runtime supports GitHub `pull_request` events only
+- the run depends on valid event payload JSON and `GITHUB_TOKEN`
 - provider output can vary, so fixture expectations are schema-level and scenario-level, not wording guarantees
 - inline comments depend on exact added-line snippet matching
 - exclude matching is intentionally simpler than a full glob engine
@@ -240,11 +248,12 @@ Use this checklist before recording or presenting:
 - confirm README examples match current `package.json` and `action.yml`
 - confirm `.ai-pr-review.yml` example only uses implemented fields
 - confirm you can explain the difference between summary publishing and inline publishing
+- confirm you can explain how `pull_request` runtime startup collects PR context
 - confirm you can explain marker-based upsert
 - confirm you can explain at least one inline downgrade path
 - confirm you can explain at least one provider-side degradation path
 - confirm you can point to all four fixture pairs
-- confirm you state the runtime wiring limitation clearly
+- confirm you state the real runtime boundaries clearly
 
 ## Suggested Demo Video Outline
 

@@ -8,21 +8,23 @@ This repository currently contains:
 - the packaged GitHub Action entrypoint in [`action.yml`](/E:/牛牛/action.yml)
 - unit tests and demo fixtures for the implemented review flow
 
-This repository does not yet contain full production wiring from the GitHub Actions event payload into `collectPullRequestContext()` inside the checked-in `src/main.ts`. That means the documented architecture is real and tested, but the default runtime entrypoint is not yet a complete plug-and-play PR collector. This README only describes behavior that is implemented today.
+This repository includes a wired default GitHub Action runtime for GitHub `pull_request` events. The default entrypoint reads the event context from the GitHub Actions environment, uses `GITHUB_TOKEN` to fetch changed files and patches, constructs a `PullRequestContext`, and then enters the existing review pipeline. This README only describes behavior that is implemented today.
 
 ## What This Project Is
 
 The project is a context-aware PR reviewer for TypeScript-oriented pull requests. Its current implemented flow is:
 
-1. load reviewer config from `.ai-pr-review.yml` or defaults
-2. accept already-collected PR metadata and changed files
-3. filter non-reviewable files and truncate oversized patches
-4. build structured review context for an LLM
-5. request structured JSON from the LLM
-6. parse and validate the JSON before publishing anything
-7. upsert a deterministic PR summary comment
-8. attempt inline comments only for findings validated against added patch lines
-9. degrade safely back to the summary when inline publishing fails
+1. on GitHub `pull_request` events, read `GITHUB_EVENT_NAME` and `GITHUB_EVENT_PATH`
+2. load reviewer config from `.ai-pr-review.yml` or defaults
+3. use `GITHUB_TOKEN` to read PR metadata and fetch changed files and patches
+4. construct `PullRequestContext`
+5. filter non-reviewable files and truncate oversized patches
+6. build structured review context for an LLM
+7. request structured JSON from the LLM
+8. parse and validate the JSON before publishing anything
+9. upsert a deterministic PR summary comment
+10. attempt inline comments only for findings validated against added patch lines
+11. degrade safely back to the summary when inline publishing fails
 
 ## What This Project Is Not
 
@@ -50,8 +52,11 @@ The intended relationship is complementary:
 
 Implemented today:
 
+- default runtime startup for GitHub `pull_request` events
 - summary comment upsert using a fixed marker
 - repository-level config loading from `.ai-pr-review.yml`
+- runtime PR context collection from `GITHUB_EVENT_NAME` and `GITHUB_EVENT_PATH`
+- fetch-based changed-file collection with `GITHUB_TOKEN`
 - diff filtering for deleted, missing-patch, generated, lock, minified, docs-only, and configured-exclude files
 - patch truncation metadata
 - review-context construction
@@ -63,7 +68,6 @@ Implemented today:
 
 Not implemented in current checked-in runtime:
 
-- automatic PR context collection from the live GitHub Actions event inside the default `run()` startup path
 - support for GitLab, Gitee, or non-GitHub platforms
 - recorded demo video artifacts
 - additional package dependencies beyond the current `package.json`
@@ -147,9 +151,10 @@ runs:
 
 Important limitation:
 
-- the packaged action entrypoint builds and runs
-- the checked-in default startup path does not yet collect pull request context from the live Actions event by itself
-- because of that, the workflow example below shows the intended consumer-side usage shape, but the current repository state should be treated as an implemented review pipeline plus packaged scaffold, not as a fully wired marketplace-ready action
+- the packaged action entrypoint builds and runs through `dist/src/main.js`
+- the default runtime is implemented for GitHub `pull_request` events only
+- non-`pull_request` events are skipped safely
+- missing event payload data, invalid event payload JSON, or missing `GITHUB_TOKEN` prevent PR context collection and fail clearly
 
 ## Example Workflow
 
@@ -186,7 +191,7 @@ Why `pull-requests: write`:
 
 Why `contents: read`:
 
-- the project shape assumes PR metadata, file diffs, and optional file content reads come from GitHub repository context
+- the runtime reads pull request metadata and changed-file context from the GitHub event and API
 
 ## Reviewer Configuration
 
@@ -286,6 +291,14 @@ Recommended setup in GitHub:
 2. create a repository secret named `OPENAI_API_KEY`
 3. expose both values in the workflow step environment
 
+Runtime expectations:
+
+- the default runtime reads `GITHUB_EVENT_NAME`
+- only GitHub `pull_request` events enter the review flow
+- `pull_request` events require `GITHUB_EVENT_PATH`
+- `GITHUB_TOKEN` is required to fetch changed files and patches
+- `OPENAI_API_KEY` is required for AI review generation unless you expect an AI-skipped summary state
+
 Fork-pull-request behavior to expect:
 
 - OpenAI secrets may be unavailable on forked PRs
@@ -327,7 +340,11 @@ This repository does not claim token-aware truncation or semantic chunking. The 
 
 Implemented degradation rules:
 
-- missing `GITHUB_TOKEN`: skip publishing and log a safe message
+- non-`pull_request` event: skip safely without entering the review flow
+- missing `GITHUB_EVENT_PATH` on a `pull_request` event: fail clearly
+- invalid GitHub event payload JSON: fail clearly
+- missing PR payload metadata on a `pull_request` event: fail clearly
+- missing `GITHUB_TOKEN` during PR context collection: fail clearly
 - missing OpenAI API key: mark AI review as `skipped`
 - timeout, rate limit, invalid provider response, or failed request: mark AI review as `degraded`
 - malformed or invalid structured JSON: discard raw model output and degrade safely
@@ -424,7 +441,9 @@ Demo usage guidance: [docs/demo-guide.md](/E:/牛牛/docs/demo-guide.md)
 
 ## Risks And Limitations
 
-- The checked-in action entrypoint is not yet wired to collect live PR context automatically.
+- The runtime supports GitHub `pull_request` events only.
+- Non-`pull_request` events are skipped by design.
+- Missing `GITHUB_EVENT_PATH`, invalid event payloads, or missing `GITHUB_TOKEN` prevent PR context collection and fail the run clearly.
 - Current exclude matching is intentionally limited and is not a full glob implementation.
 - Full file context is optional and guarded by explicit safety limits.
 - Current full-file-context mode also depends on a file reader being provided.
@@ -436,7 +455,6 @@ Demo usage guidance: [docs/demo-guide.md](/E:/牛牛/docs/demo-guide.md)
 
 These are not implemented today:
 
-- live GitHub Actions startup wiring that builds PR context from the event payload
 - broader workflow packaging for direct consumer adoption
 - richer exclusion matching
 - more advanced prompt/token budgeting

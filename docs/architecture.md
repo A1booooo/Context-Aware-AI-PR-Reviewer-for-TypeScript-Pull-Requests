@@ -1,6 +1,6 @@
 # Architecture Notes
 
-This document describes the current implemented architecture only. It does not describe planned runtime wiring that is not yet present in the checked-in code.
+This document describes the current implemented architecture only, including the default GitHub Actions runtime startup path for GitHub `pull_request` events.
 
 ## Current Top-Level Shape
 
@@ -45,7 +45,7 @@ Current responsibilities:
 
 - create logger
 - load reviewer config
-- accept an injected startup hook that may return PR context
+- use the default runtime startup path for GitHub `pull_request` events unless a test startup hook is injected
 - create GitHub comments client from `GITHUB_TOKEN`
 - create OpenAI review client from environment
 - run the deterministic summary workflow
@@ -54,7 +54,7 @@ Current responsibilities:
 Important current boundary:
 
 - `main.ts` orchestrates the review flow
-- `main.ts` does not currently construct live PR context from the GitHub Actions event by itself
+- GitHub event parsing and PR files API access stay in `src/github/*` so `main.ts` remains thin
 
 ### `src/config/*`
 
@@ -77,6 +77,7 @@ Boundary:
 
 Pull request metadata and changed-file collection primitives.
 
+- reads GitHub Actions runtime event context for `pull_request` events
 - extracts typed PR metadata from a GitHub Action-like context
 - paginates pull request files
 - classifies files as:
@@ -87,7 +88,7 @@ Pull request metadata and changed-file collection primitives.
 Boundary:
 
 - this module defines the PR data model and collector helpers
-- it is not wired into the checked-in default startup path yet
+- it owns runtime PR context construction and changed-file collection boundaries
 
 ### `src/github/comments.ts`
 
@@ -261,9 +262,12 @@ Cross-cutting utilities.
 
 ## Actual Data Flow
 
-Current implemented orchestration in `runDeterministicSummaryWorkflow()`:
+Current implemented orchestration is:
 
 ```text
+GitHub Actions pull_request runtime
+  -> collectPullRequestContextFromRuntime()
+  -> collectPullRequestContext()
 PR context
   -> filterPullRequestFiles()
   -> buildReviewContext()
@@ -299,8 +303,11 @@ The review workflow requires:
 Current repository reality:
 
 - these structures are fully modeled and tested
-- the default checked-in `startup()` still returns `undefined`
-- so live PR collection is not yet wired into the packaged action entrypoint
+- the default runtime path checks `GITHUB_EVENT_NAME`
+- non-`pull_request` events return `undefined` and skip safely
+- `pull_request` events require `GITHUB_EVENT_PATH`
+- the runtime reads the event payload JSON, resolves repository metadata, requires `GITHUB_TOKEN`, and then calls `collectPullRequestContext()`
+- changed files are fetched from the GitHub pull request files API with `perPage = 100`
 
 ### 3. Diff Filtering
 
@@ -354,6 +361,14 @@ Current degradation states:
 - `rate_limit`
 - `provider_response_invalid`
 - `request_failed`
+
+Runtime startup also has explicit failure or skip boundaries before the LLM stage:
+
+- non-`pull_request` event: skip
+- missing `GITHUB_EVENT_PATH`: fail
+- invalid event payload JSON: fail
+- missing PR payload metadata: fail
+- missing `GITHUB_TOKEN` for changed-file collection: fail
 
 ### 6. Parser Boundary
 
@@ -411,6 +426,8 @@ This gives deterministic rerun behavior for the summary layer.
 Current safety rules:
 
 - secrets must be redacted in logs
+- non-`pull_request` events must not pretend to review a PR
+- applicable but unavailable runtime inputs must fail clearly instead of running an empty review
 - raw LLM output must never be published
 - invalid inline findings must not be published inline
 - inline publish failure must not fail the whole Action
@@ -444,12 +461,13 @@ Not present in `package.json` today:
 
 That absence is important because it explains current boundaries:
 
-- GitHub Action runtime collection is not yet wired through GitHub SDK helpers
+- GitHub Action runtime collection is implemented through local fetch-based helpers rather than GitHub SDK helpers
 - exclude matching is implemented manually rather than through a glob package
 
 ## Known Architectural Limitations
 
-- checked-in `run()` startup path is still scaffold-like for PR collection
+- runtime support is limited to GitHub `pull_request` events
+- PR context collection depends on readable event payload JSON and `GITHUB_TOKEN`
 - full file context depends on a provided reader and strict safety caps
 - current exclude matching is intentionally simple
 - current inline validation is exact-snippet based and patch-only
