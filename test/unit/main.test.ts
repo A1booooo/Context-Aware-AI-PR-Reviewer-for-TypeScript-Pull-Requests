@@ -7,6 +7,7 @@ import {
 import { createLogger } from '../../src/utils/logger';
 import type { PullRequestContext } from '../../src/github/pr';
 import type { GitHubCommentsClient } from '../../src/github/comments';
+import type { ReviewerConfig } from '../../src/config/schema';
 
 function createPullRequestContextFixture(): PullRequestContext {
   return {
@@ -71,6 +72,25 @@ function createCommentsClientFixture(): GitHubCommentsClient {
   };
 }
 
+function createReviewerConfigFixture(
+  overrides: Partial<ReviewerConfig> = {}
+): ReviewerConfig {
+  return {
+    language: 'zh-CN',
+    max_files: 20,
+    max_patch_chars_per_file: 6000,
+    include_full_file_context: false,
+    exclude: [],
+    review: {
+      severity_threshold: 'medium',
+      max_inline_comments: 5,
+      confidence_threshold: 0.75,
+      focus: ['bug-risk']
+    },
+    ...overrides
+  };
+}
+
 describe('run', () => {
   it('logs startup and completion for the minimal action flow', async () => {
     const info = vi.fn();
@@ -78,7 +98,8 @@ describe('run', () => {
 
     await run({
       logger: { info, error },
-      startup: vi.fn(async () => undefined)
+      startup: vi.fn(async () => undefined),
+      loadConfig: vi.fn(() => createReviewerConfigFixture())
     });
 
     expect(info).toHaveBeenCalledWith('Action starting.');
@@ -95,7 +116,8 @@ describe('run', () => {
         logger: { info, error },
         startup: vi.fn(async () => {
           throw new Error('Authorization: Bearer super-secret-token');
-        })
+        }),
+        loadConfig: vi.fn(() => createReviewerConfigFixture())
       })
     ).rejects.toThrow('Authorization: Bearer super-secret-token');
 
@@ -113,7 +135,8 @@ describe('run', () => {
     await run({
       logger: { info, error },
       startup: vi.fn(async () => createPullRequestContextFixture()),
-      createCommentsClient
+      createCommentsClient,
+      loadConfig: vi.fn(() => createReviewerConfigFixture())
     });
 
     expect(createCommentsClient).toHaveBeenCalledTimes(1);
@@ -133,7 +156,8 @@ describe('run', () => {
     await run({
       logger: { info, error },
       startup: vi.fn(async () => undefined),
-      createCommentsClient
+      createCommentsClient,
+      loadConfig: vi.fn(() => createReviewerConfigFixture())
     });
 
     expect(createCommentsClient).not.toHaveBeenCalled();
@@ -152,7 +176,8 @@ describe('run', () => {
 
     await run({
       logger: { info, error },
-      startup: vi.fn(async () => createPullRequestContextFixture())
+      startup: vi.fn(async () => createPullRequestContextFixture()),
+      loadConfig: vi.fn(() => createReviewerConfigFixture())
     });
 
     if (originalToken === undefined) {
@@ -212,7 +237,8 @@ describe('runDeterministicSummaryWorkflow', () => {
     const result = await runDeterministicSummaryWorkflow({
       logger: { info, error },
       pullRequestContext: createPullRequestContextFixture(),
-      commentsClient
+      commentsClient,
+      config: createReviewerConfigFixture()
     });
 
     expect(result.action).toBe('created');
@@ -228,5 +254,68 @@ describe('runDeterministicSummaryWorkflow', () => {
     );
     expect(commentsClient.updateIssueComment).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
+  });
+
+  it('applies max_files after diff filtering and max_patch_chars_per_file during truncation', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const commentsClient = createCommentsClientFixture();
+    const pullRequestContext = createPullRequestContextFixture();
+
+    pullRequestContext.files = [
+      {
+        filename: 'docs/usage.md',
+        status: 'modified',
+        additions: 1,
+        deletions: 0,
+        changes: 1,
+        kind: 'text_patch',
+        patch: '@@ -1 +1 @@\n-old\n+new'
+      },
+      {
+        filename: 'src/one.ts',
+        status: 'modified',
+        additions: 1,
+        deletions: 0,
+        changes: 1,
+        kind: 'text_patch',
+        patch: '@@ -1,4 +1,4 @@\n-old line\n+new line\n+another line'
+      },
+      {
+        filename: 'src/two.ts',
+        status: 'modified',
+        additions: 1,
+        deletions: 0,
+        changes: 1,
+        kind: 'text_patch',
+        patch: '@@ -1 +1 @@\n-old\n+new'
+      }
+    ];
+
+    await runDeterministicSummaryWorkflow({
+      logger: { info, error },
+      pullRequestContext,
+      commentsClient,
+      config: createReviewerConfigFixture({
+        max_files: 1,
+        max_patch_chars_per_file: 20
+      })
+    });
+
+    const firstCommentRequest = vi.mocked(
+      commentsClient.createIssueComment
+    ).mock.calls[0]?.[0];
+
+    expect(firstCommentRequest).toEqual(
+      expect.objectContaining({
+        owner: 'octo-org',
+        repo: 'review-repo',
+        issueNumber: 42,
+        body: expect.stringContaining('Included files count: 1')
+      })
+    );
+    expect(firstCommentRequest?.body).toContain(
+      'Truncated files summary:\n- src/one.ts'
+    );
   });
 });

@@ -150,4 +150,26 @@ describe('filterPullRequestFiles', () => {
     ]);
     expect(DEFAULT_MAX_PATCH_CHARACTERS).toBeGreaterThan(patch.length);
   });
+
+  it('applies configured exclude patterns after merging with defaults', () => {
+    const result = filterPullRequestFiles(
+      [
+        createTextPatchFile('vendor/generated.ts', '@@ -1 +1 @@\n-old\n+new'),
+        createTextPatchFile('src/feature.ts', '@@ -1 +1 @@\n-old\n+new')
+      ],
+      {
+        excludePatterns: ['vendor/**']
+      }
+    );
+
+    expect(result.includedFiles).toEqual([
+      expect.objectContaining({
+        filename: 'src/feature.ts'
+      })
+    ]);
+    expect(result.excludedFiles).toContainEqual({
+      filename: 'vendor/generated.ts',
+      reason: 'configured_exclude'
+    });
+  });
 });

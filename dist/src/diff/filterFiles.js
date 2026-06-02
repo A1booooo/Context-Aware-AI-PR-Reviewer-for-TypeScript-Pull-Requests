@@ -40,8 +40,9 @@ function filterPullRequestFiles(files, options = {}) {
     const includedFiles = [];
     const excludedFiles = [];
     const maxPatchCharacters = options.maxPatchCharacters ?? exports.DEFAULT_DIFF_FILTER_RULES.maxPatchCharacters;
+    const excludePatterns = options.excludePatterns ?? [];
     for (const file of files) {
-        const reason = getExclusionReason(file);
+        const reason = getExclusionReason(file, excludePatterns);
         if (reason) {
             excludedFiles.push({
                 filename: file.filename,
@@ -63,12 +64,15 @@ function filterPullRequestFiles(files, options = {}) {
             truncatedPatchLength: truncatedPatch.truncatedPatchLength
         });
     }
+    const maxIncludedFiles = options.maxIncludedFiles;
     return {
-        includedFiles,
+        includedFiles: typeof maxIncludedFiles === 'number'
+            ? includedFiles.slice(0, maxIncludedFiles)
+            : includedFiles,
         excludedFiles
     };
 }
-function getExclusionReason(file) {
+function getExclusionReason(file, excludePatterns) {
     if (file.kind === 'deleted') {
         return 'deleted';
     }
@@ -76,6 +80,9 @@ function getExclusionReason(file) {
         return 'missing_patch';
     }
     const normalizedPath = normalizePath(file.filename);
+    if (matchesConfiguredExcludePattern(normalizedPath, excludePatterns)) {
+        return 'configured_exclude';
+    }
     if (isGeneratedFile(normalizedPath)) {
         return 'generated';
     }
@@ -92,6 +99,19 @@ function getExclusionReason(file) {
 }
 function normalizePath(filename) {
     return filename.replace(/\\/g, '/').toLowerCase();
+}
+function matchesConfiguredExcludePattern(normalizedPath, excludePatterns) {
+    return excludePatterns.some((pattern) => matchesExcludePattern(normalizedPath, normalizePath(pattern)));
+}
+function matchesExcludePattern(normalizedPath, normalizedPattern) {
+    if (normalizedPattern.endsWith('/**')) {
+        const directoryPrefix = normalizedPattern.slice(0, -2);
+        return normalizedPath.startsWith(directoryPrefix);
+    }
+    if (normalizedPattern.startsWith('*.')) {
+        return normalizedPath.endsWith(normalizedPattern.slice(1));
+    }
+    return normalizedPath === normalizedPattern;
 }
 function isGeneratedFile(normalizedPath) {
     return (exports.DEFAULT_DIFF_FILTER_RULES.generatedPathPrefixes.some((prefix) => normalizedPath.startsWith(prefix)) ||
