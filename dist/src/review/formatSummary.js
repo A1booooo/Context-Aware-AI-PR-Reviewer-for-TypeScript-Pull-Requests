@@ -93,6 +93,15 @@ function formatDeterministicSummaryComment(options) {
             }
         }
     }
+    lines.push('', 'Downgraded inline findings:');
+    if (!options.downgradedInlineFindings || options.downgradedInlineFindings.length === 0) {
+        lines.push('- none');
+    }
+    else {
+        for (const finding of sortDowngradedInlineFindings(options.downgradedInlineFindings)) {
+            lines.push(`- [${finding.severity}] ${finding.file}: ${finding.title} (reason: ${finding.reason}, confidence ${finding.confidence.toFixed(2)})`);
+        }
+    }
     return lines.join('\n');
 }
 function summarizeExcludedReasons(excludedFiles) {
@@ -118,4 +127,15 @@ function compareSeverity(left, right) {
         low: 3
     };
     return severityRank[left] - severityRank[right];
+}
+function sortDowngradedInlineFindings(findings) {
+    return [...findings].sort((left, right) => {
+        if (left.file !== right.file) {
+            return left.file.localeCompare(right.file);
+        }
+        if (left.severity !== right.severity) {
+            return compareSeverity(left.severity, right.severity);
+        }
+        return right.confidence - left.confidence;
+    });
 }
