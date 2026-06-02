@@ -4,6 +4,7 @@ import {
   upsertPullRequestCommentByMarker
 } from '../github/comments';
 import type { ReviewContextMetadata } from '../context/buildReviewContext';
+import type { DowngradedInlineFinding } from '../diff/matchSnippet';
 import type { PullRequestMetadata } from '../github/pr';
 
 import {
@@ -18,6 +19,7 @@ export interface PublishDeterministicSummaryOptions {
   excludedFiles: ExcludedDiffFile[];
   reviewContext?: ReviewContextMetadata;
   aiReview?: SummaryAiReview;
+  downgradedInlineFindings?: DowngradedInlineFinding[];
   client: GitHubCommentsClient;
 }
 
@@ -29,7 +31,8 @@ export async function publishDeterministicSummary(
     includedFiles: options.includedFiles,
     excludedFiles: options.excludedFiles,
     reviewContext: options.reviewContext,
-    aiReview: options.aiReview
+    aiReview: options.aiReview,
+    downgradedInlineFindings: options.downgradedInlineFindings
   });
 
   return upsertPullRequestCommentByMarker({

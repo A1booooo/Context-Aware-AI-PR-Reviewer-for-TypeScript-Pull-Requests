@@ -5,7 +5,8 @@ export type DowngradedInlineFindingReason =
   | 'low_confidence'
   | 'no_match'
   | 'non_added_line_match'
-  | 'max_inline_comments';
+  | 'max_inline_comments'
+  | 'publish_failed';
 
 export interface PatchLikeFile {
   filename: string;

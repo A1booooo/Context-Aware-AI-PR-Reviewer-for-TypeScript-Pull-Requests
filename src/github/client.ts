@@ -25,6 +25,17 @@ export interface GitHubIssueCommentApiResponse {
   };
 }
 
+export interface GitHubPullRequestReviewCommentApiResponse {
+  id: number;
+  body?: string | null;
+  path?: string | null;
+  line?: number | null;
+  user?: {
+    login?: string;
+    type?: string;
+  };
+}
+
 export interface GitHubIssueCommentsPage<TComment> {
   data: TComment[];
 }
@@ -49,6 +60,17 @@ export interface UpdateIssueCommentRequest {
   body: string;
 }
 
+export interface CreatePullRequestReviewCommentRequest {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  commitId: string;
+  path: string;
+  line: number;
+  side: 'RIGHT';
+  body: string;
+}
+
 export interface PullRequestCommentsClient<TComment> {
   listPullRequestComments(
     request: PullRequestCommentsRequest
@@ -59,4 +81,10 @@ export interface PullRequestCommentsClient<TComment> {
   updateIssueComment(
     request: UpdateIssueCommentRequest
   ): Promise<TComment>;
+}
+
+export interface PullRequestReviewCommentsClient<TReviewComment> {
+  createPullRequestReviewComment(
+    request: CreatePullRequestReviewCommentRequest
+  ): Promise<TReviewComment>;
 }

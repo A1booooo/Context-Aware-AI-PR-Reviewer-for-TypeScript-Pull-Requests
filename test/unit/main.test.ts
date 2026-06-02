@@ -73,7 +73,27 @@ function createCommentsClientFixture(): GitHubCommentsClient {
         login: 'github-actions[bot]',
         type: 'Bot'
       }
-    }))
+    })),
+    createPullRequestReviewComment: vi.fn(
+      async ({
+        body,
+        path,
+        line
+      }: {
+        body: string;
+        path: string;
+        line: number;
+      }) => ({
+        id: 1001,
+        body,
+        path,
+        line,
+        user: {
+          login: 'github-actions[bot]',
+          type: 'Bot'
+        }
+      })
+    )
   };
 }
 
@@ -104,6 +124,45 @@ function createLlmClientFixture(
       status: 'success',
       outputText
     }))
+  };
+}
+
+function createMatchedInlineReviewJsonOutput(): string {
+  return JSON.stringify({
+    summary_findings: [
+      {
+        title: 'Missing overflow guard before incrementing nextCount',
+        severity: 'high',
+        confidence: 0.92,
+        description: 'The added arithmetic path should validate the upper bound.'
+      }
+    ],
+    inline_findings: [
+      {
+        message: 'Guard the increment before nextCount is derived.',
+        severity: 'medium',
+        confidence: 0.88,
+        file: 'src/feature.ts',
+        code_snippet: 'const nextCount = count + 1;'
+      }
+    ]
+  });
+}
+
+function createInlineMatchPullRequestContextFixture(): PullRequestContext {
+  return {
+    ...createPullRequestContextFixture(),
+    files: [
+      {
+        filename: 'src/feature.ts',
+        status: 'modified',
+        additions: 1,
+        deletions: 0,
+        changes: 1,
+        kind: 'text_patch',
+        patch: '@@ -10,2 +10,3 @@\n const count = value;\n+const nextCount = count + 1;\n return nextCount;'
+      }
+    ]
   };
 }
 
@@ -160,6 +219,7 @@ describe('run', () => {
     expect(createCommentsClient).toHaveBeenCalledTimes(1);
     expect(createLlmClient).toHaveBeenCalledTimes(1);
     expect(commentsClient.createIssueComment).toHaveBeenCalledTimes(1);
+    expect(commentsClient.createPullRequestReviewComment).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
       'Summary review comment created for PR #42.'
     );
@@ -279,6 +339,65 @@ describe('runDeterministicSummaryWorkflow', () => {
       'Summary review comment created for PR #42.'
     );
     expect(commentsClient.updateIssueComment).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('publishes only validated inline findings before publishing the summary', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const commentsClient = createCommentsClientFixture();
+
+    await runDeterministicSummaryWorkflow({
+      logger: { info, error },
+      pullRequestContext: createInlineMatchPullRequestContextFixture(),
+      commentsClient,
+      llmClient: createLlmClientFixture(createMatchedInlineReviewJsonOutput()),
+      config: createReviewerConfigFixture()
+    });
+
+    expect(commentsClient.createPullRequestReviewComment).toHaveBeenCalledTimes(1);
+    expect(commentsClient.createPullRequestReviewComment).toHaveBeenCalledWith({
+      owner: 'octo-org',
+      repo: 'review-repo',
+      pullNumber: 42,
+      commitId: 'head-sha',
+      path: 'src/feature.ts',
+      line: 11,
+      side: 'RIGHT',
+      body: '[medium] Guard the increment before nextCount is derived. (confidence 0.88)'
+    });
+    expect(commentsClient.createIssueComment).toHaveBeenCalledTimes(1);
+    const summaryBody = vi.mocked(commentsClient.createIssueComment).mock.calls[0]?.[0]?.body;
+    expect(summaryBody).toContain('Downgraded inline findings:\n- none');
+  });
+
+  it('degrades inline publishing failures into the summary and still publishes the summary comment', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const commentsClient = createCommentsClientFixture();
+
+    vi.mocked(commentsClient.createPullRequestReviewComment).mockRejectedValueOnce(
+      Object.assign(new Error('Unprocessable Entity'), { status: 422 })
+    );
+
+    await runDeterministicSummaryWorkflow({
+      logger: { info, error },
+      pullRequestContext: createInlineMatchPullRequestContextFixture(),
+      commentsClient,
+      llmClient: createLlmClientFixture(createMatchedInlineReviewJsonOutput()),
+      config: createReviewerConfigFixture()
+    });
+
+    expect(commentsClient.createPullRequestReviewComment).toHaveBeenCalledTimes(1);
+    expect(commentsClient.createIssueComment).toHaveBeenCalledTimes(1);
+    const summaryBody = vi.mocked(commentsClient.createIssueComment).mock.calls[0]?.[0]?.body;
+    expect(summaryBody).toContain('Downgraded inline findings:');
+    expect(summaryBody).toContain(
+      '[medium] src/feature.ts: Guard the increment before nextCount is derived. (reason: publish_failed, confidence 0.88)'
+    );
+    expect(info).toHaveBeenCalledWith(
+      'Summary review comment created for PR #42.'
+    );
     expect(error).not.toHaveBeenCalled();
   });
 

@@ -6,8 +6,17 @@ import {
   type GitHubCommentsClient
 } from './github/comments';
 import { buildReviewContext } from './context/buildReviewContext';
-import { filterPullRequestFiles } from './diff/filterFiles';
+import {
+  filterPullRequestFiles,
+  type IncludedDiffFile
+} from './diff/filterFiles';
+import {
+  matchCandidateInlineFindings,
+  type DowngradedInlineFinding,
+  type ValidatedInlineFinding
+} from './diff/matchSnippet';
 import { publishDeterministicSummary } from './review/publishSummary';
+import { publishValidatedInlineComments } from './review/publishInline';
 import {
   createOpenAiReviewClientFromEnvironment,
   type LlmReviewClient,
@@ -57,14 +66,25 @@ export async function runDeterministicSummaryWorkflow(
   });
   const aiReview = await buildSummaryAiReview({
     llmClient: options.llmClient,
-    reviewContext
+    reviewContext,
+    includedFiles: filteredFiles.includedFiles,
+    config: options.config
+  });
+  const inlinePublishResult = await publishValidatedInlineComments({
+    metadata: options.pullRequestContext.metadata,
+    findings: aiReview.validatedInlineFindings,
+    client: options.commentsClient
   });
   const result = await publishDeterministicSummary({
     metadata: options.pullRequestContext.metadata,
     includedFiles: filteredFiles.includedFiles,
     excludedFiles: filteredFiles.excludedFiles,
     reviewContext: reviewContext.metadata,
-    aiReview,
+    aiReview: aiReview.summary,
+    downgradedInlineFindings: [
+      ...aiReview.downgradedInlineFindings,
+      ...inlinePublishResult.downgradedFindings
+    ],
     client: options.commentsClient
   });
 
@@ -124,46 +144,86 @@ if (require.main === module) {
 async function buildSummaryAiReview(options: {
   llmClient: LlmReviewClient;
   reviewContext: Awaited<ReturnType<typeof buildReviewContext>>;
-}): Promise<SummaryAiReview> {
+  includedFiles: IncludedDiffFile[];
+  config: ReviewerConfig;
+}): Promise<{
+  summary: SummaryAiReview;
+  validatedInlineFindings: ValidatedInlineFinding[];
+  downgradedInlineFindings: DowngradedInlineFinding[];
+}> {
   const llmResult = await options.llmClient.requestStructuredReview({
     reviewContext: options.reviewContext
   });
 
   if (llmResult.status === 'success') {
-    return parseSummaryAiReview(llmResult);
+    return parseSummaryAiReview(llmResult, {
+      includedFiles: options.includedFiles,
+      config: options.config
+    });
   }
 
   if (llmResult.status === 'skipped') {
     return {
-      status: 'skipped',
-      code: llmResult.code,
-      message: llmResult.message
+      summary: {
+        status: 'skipped',
+        code: llmResult.code,
+        message: llmResult.message
+      },
+      validatedInlineFindings: [],
+      downgradedInlineFindings: []
     };
   }
 
   return {
-    status: 'degraded',
-    code: llmResult.code,
-    message: llmResult.message
+    summary: {
+      status: 'degraded',
+      code: llmResult.code,
+      message: llmResult.message
+    },
+    validatedInlineFindings: [],
+    downgradedInlineFindings: []
   };
 }
 
 function parseSummaryAiReview(
-  llmResult: Extract<StructuredReviewResult, { status: 'success' }>
-): SummaryAiReview {
+  llmResult: Extract<StructuredReviewResult, { status: 'success' }>,
+  options: {
+    includedFiles: IncludedDiffFile[];
+    config: ReviewerConfig;
+  }
+): {
+  summary: SummaryAiReview;
+  validatedInlineFindings: ValidatedInlineFinding[];
+  downgradedInlineFindings: DowngradedInlineFinding[];
+} {
   const parsedReview = parseStructuredReview(llmResult.outputText);
 
   if (!parsedReview.ok) {
     return {
-      status: 'degraded',
-      code: parsedReview.error.code,
-      message:
-        'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+      summary: {
+        status: 'degraded',
+        code: parsedReview.error.code,
+        message:
+          'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+      },
+      validatedInlineFindings: [],
+      downgradedInlineFindings: []
     };
   }
 
+  const matchedInlineFindings = matchCandidateInlineFindings({
+    inlineFindings: parsedReview.inlineFindings,
+    patches: options.includedFiles,
+    confidenceThreshold: options.config.review.confidence_threshold,
+    maxInlineComments: options.config.review.max_inline_comments
+  });
+
   return {
-    status: 'completed',
-    findings: parsedReview.summaryFindings
+    summary: {
+      status: 'completed',
+      findings: parsedReview.summaryFindings
+    },
+    validatedInlineFindings: matchedInlineFindings.validatedInlineFindings,
+    downgradedInlineFindings: matchedInlineFindings.downgradedFindings
   };
 }
