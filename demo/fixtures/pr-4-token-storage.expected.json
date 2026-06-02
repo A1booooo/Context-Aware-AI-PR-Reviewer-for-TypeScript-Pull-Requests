@@ -1,0 +1,18 @@
+{
+  "summary_findings": [
+    {
+      "title": "Persisting access tokens in localStorage increases exposure to token theft from XSS or shared browser state.",
+      "severity": "critical",
+      "confidence": 0.97
+    }
+  ],
+  "inline_findings": [
+    {
+      "title": "Copying the token onto window makes the secret easier to read from any injected script or debugging surface.",
+      "severity": "high",
+      "confidence": 0.95,
+      "file": "src/auth/tokenStorage.ts",
+      "code_snippet": "  window.__debugToken = token;"
+    }
+  ]
+}

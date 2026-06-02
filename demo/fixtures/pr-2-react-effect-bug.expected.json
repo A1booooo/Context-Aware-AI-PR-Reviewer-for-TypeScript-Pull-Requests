@@ -1,0 +1,18 @@
+{
+  "summary_findings": [
+    {
+      "title": "The effect now captures stale draft state because its dependency list is empty.",
+      "severity": "high",
+      "confidence": 0.95
+    }
+  ],
+  "inline_findings": [
+    {
+      "title": "An empty dependency array prevents the effect from re-running when draft or syncDraft changes.",
+      "severity": "high",
+      "confidence": 0.94,
+      "file": "src/components/LivePreview.tsx",
+      "code_snippet": "  }, []);"
+    }
+  ]
+}

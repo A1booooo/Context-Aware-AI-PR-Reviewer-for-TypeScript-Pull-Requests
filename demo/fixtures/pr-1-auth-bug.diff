@@ -1,0 +1,26 @@
+diff --git a/src/auth/session.ts b/src/auth/session.ts
+index 2f4c1ab..9a7d4e1 100644
+--- a/src/auth/session.ts
++++ b/src/auth/session.ts
+@@ -10,10 +10,11 @@ export async function requireAdminSession(request: Request): Promise<User> {
+-  const session = await loadSession(request);
+-  if (!session?.userId) {
+-    throw new Error('Unauthorized');
+-  }
+-
+-  const user = await getUserById(session.userId);
+-  if (!user?.isAdmin) {
+-    throw new Error('Forbidden');
+-  }
++  const session = await loadSession(request);
++  if (!session?.userId) {
++    throw new Error('Unauthorized');
++  }
++
++  const user = await getUserById(session.userId);
++  if (!user) {
++    return createGuestUser();
++  }
+ 
+   return user;
+ }

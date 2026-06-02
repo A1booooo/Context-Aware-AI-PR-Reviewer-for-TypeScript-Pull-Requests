@@ -1,0 +1,18 @@
+{
+  "summary_findings": [
+    {
+      "title": "The response status is no longer checked, so failed saves will be treated as successful JSON responses.",
+      "severity": "high",
+      "confidence": 0.93
+    }
+  ],
+  "inline_findings": [
+    {
+      "title": "Removing the response.ok guard drops explicit error handling for non-2xx API responses.",
+      "severity": "medium",
+      "confidence": 0.9,
+      "file": "src/api/saveProfile.ts",
+      "code_snippet": "  return response.json();"
+    }
+  ]
+}
