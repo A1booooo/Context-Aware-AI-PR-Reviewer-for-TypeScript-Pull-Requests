@@ -4,6 +4,7 @@ exports.runDeterministicSummaryWorkflow = runDeterministicSummaryWorkflow;
 exports.run = run;
 const logger_1 = require("./utils/logger");
 const errors_1 = require("./utils/errors");
+const pr_1 = require("./github/pr");
 const comments_1 = require("./github/comments");
 const buildReviewContext_1 = require("./context/buildReviewContext");
 const filterFiles_1 = require("./diff/filterFiles");
@@ -13,9 +14,6 @@ const publishInline_1 = require("./review/publishInline");
 const client_1 = require("./llm/client");
 const parseReview_1 = require("./llm/parseReview");
 const loadConfig_1 = require("./config/loadConfig");
-async function defaultStartup() {
-    return Promise.resolve();
-}
 async function runDeterministicSummaryWorkflow(options) {
     const logger = options.logger ?? (0, logger_1.createLogger)();
     const filteredFiles = (0, filterFiles_1.filterPullRequestFiles)(options.pullRequestContext.files, {
@@ -57,10 +55,14 @@ async function runDeterministicSummaryWorkflow(options) {
 }
 async function run(options = {}) {
     const logger = options.logger ?? (0, logger_1.createLogger)();
-    const startup = options.startup ?? defaultStartup;
     const createCommentsClient = options.createCommentsClient ?? comments_1.createGitHubCommentsClientFromEnvironment;
     const createLlmClient = options.createLlmClient ?? client_1.createOpenAiReviewClientFromEnvironment;
     const getReviewerConfig = options.loadConfig ?? loadConfig_1.loadReviewerConfig;
+    const startup = options.startup ??
+        (() => (0, pr_1.collectPullRequestContextFromRuntime)({
+            readEventFile: options.readEventFile,
+            createClientFromToken: options.createPullRequestFilesClientFromToken
+        }));
     logger.info('Action starting.');
     try {
         const config = getReviewerConfig();

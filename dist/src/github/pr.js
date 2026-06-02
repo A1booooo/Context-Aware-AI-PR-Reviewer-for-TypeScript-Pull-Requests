@@ -1,8 +1,38 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.collectPullRequestContextFromRuntime = collectPullRequestContextFromRuntime;
 exports.getPullRequestMetadata = getPullRequestMetadata;
 exports.collectPullRequestContext = collectPullRequestContext;
+const node_fs_1 = __importDefault(require("node:fs"));
+const client_1 = require("./client");
 const FILES_PER_PAGE = 100;
+async function collectPullRequestContextFromRuntime(options = {}) {
+    const env = options.env ?? process.env;
+    const eventName = env.GITHUB_EVENT_NAME?.trim();
+    if (eventName !== 'pull_request') {
+        return undefined;
+    }
+    const eventPath = env.GITHUB_EVENT_PATH?.trim();
+    if (!eventPath) {
+        throw new Error('GITHUB_EVENT_PATH is required for pull_request events.');
+    }
+    const readEventFile = options.readEventFile ?? readGitHubEventFile;
+    const rawEventPayload = readEventFile(eventPath);
+    const eventPayload = parseGitHubEventPayload(rawEventPayload);
+    const context = createGitHubActionContextFromRuntimePayload(eventPayload, env);
+    const token = env.GITHUB_TOKEN?.trim();
+    if (!token) {
+        throw new Error('GITHUB_TOKEN is required to collect pull request files for pull_request events.');
+    }
+    const createClientFromToken = options.createClientFromToken ?? defaultCreateClientFromToken;
+    return collectPullRequestContext({
+        context,
+        client: createClientFromToken(token)
+    });
+}
 function getPullRequestMetadata(context) {
     const pullRequest = context.payload.pull_request;
     if (!pullRequest) {
@@ -89,4 +119,54 @@ function classifyPullRequestFile(file) {
         kind: 'missing_patch',
         patch: null
     };
+}
+function readGitHubEventFile(path) {
+    try {
+        return node_fs_1.default.readFileSync(path, 'utf8');
+    }
+    catch {
+        throw new Error(`Failed to read GitHub event payload from ${path}.`);
+    }
+}
+function parseGitHubEventPayload(value) {
+    try {
+        return JSON.parse(value);
+    }
+    catch {
+        throw new Error('GitHub event payload is not valid JSON.');
+    }
+}
+function createGitHubActionContextFromRuntimePayload(payload, env) {
+    const repository = resolveRuntimeRepository(payload.repository, env);
+    return {
+        repo: repository,
+        payload: {
+            pull_request: payload.pull_request
+        }
+    };
+}
+function resolveRuntimeRepository(repository, env) {
+    const owner = repository?.owner?.login?.trim();
+    const repo = repository?.name?.trim();
+    if (owner && repo) {
+        return {
+            owner,
+            repo
+        };
+    }
+    const repositoryEnv = env.GITHUB_REPOSITORY?.trim();
+    if (!repositoryEnv) {
+        throw new Error('GitHub event payload is missing repository metadata and GITHUB_REPOSITORY is unavailable.');
+    }
+    const [envOwner, envRepo] = repositoryEnv.split('/');
+    if (!envOwner || !envRepo) {
+        throw new Error('GITHUB_REPOSITORY must be in the form "owner/repo".');
+    }
+    return {
+        owner: envOwner,
+        repo: envRepo
+    };
+}
+function defaultCreateClientFromToken(token) {
+    return (0, client_1.createGitHubPullRequestFilesClientFromToken)(token);
 }

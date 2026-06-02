@@ -281,6 +281,168 @@ describe('run', () => {
     expect(loggedMessages).not.toContain('super-secret-token');
     expect(loggedMessages.join('\n')).not.toContain('super-secret-token');
   });
+
+  it('uses the default runtime startup path to collect pull request context and publish the summary', async () => {
+    const originalEnv = {
+      GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME,
+      GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH,
+      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY
+    };
+    const info = vi.fn();
+    const error = vi.fn();
+    const readEventFile = vi.fn(() =>
+      JSON.stringify({
+        repository: {
+          name: 'review-repo',
+          owner: {
+            login: 'octo-org'
+          }
+        },
+        pull_request: {
+          number: 42,
+          title: 'Improve file loading',
+          body: 'This updates the file collection flow.',
+          user: {
+            login: 'contributor'
+          },
+          base: {
+            ref: 'main',
+            sha: 'base-sha'
+          },
+          head: {
+            ref: 'feature/task-2',
+            sha: 'head-sha'
+          }
+        }
+      })
+    );
+    const createCommentsClient = vi.fn(() => createCommentsClientFixture());
+    const createPullRequestFilesClientFromToken = vi.fn(() => ({
+      listPullRequestFiles: vi.fn(async () => ({
+        data: [
+          {
+            filename: 'src/feature.ts',
+            status: 'modified',
+            additions: 1,
+            deletions: 0,
+            changes: 1,
+            patch: '@@ -1 +1 @@\n-old\n+new'
+          }
+        ]
+      }))
+    }));
+
+    process.env.GITHUB_EVENT_NAME = 'pull_request';
+    process.env.GITHUB_EVENT_PATH = 'event.json';
+    process.env.GITHUB_TOKEN = 'github-secret-token';
+    process.env.OPENAI_API_KEY = 'openai-secret-token';
+
+    await run({
+      logger: { info, error },
+      readEventFile,
+      createCommentsClient,
+      createPullRequestFilesClientFromToken,
+      createLlmClient: vi.fn(() => createLlmClientFixture()),
+      loadConfig: vi.fn(() => createReviewerConfigFixture())
+    });
+
+    if (originalEnv.GITHUB_EVENT_NAME === undefined) {
+      delete process.env.GITHUB_EVENT_NAME;
+    } else {
+      process.env.GITHUB_EVENT_NAME = originalEnv.GITHUB_EVENT_NAME;
+    }
+    if (originalEnv.GITHUB_EVENT_PATH === undefined) {
+      delete process.env.GITHUB_EVENT_PATH;
+    } else {
+      process.env.GITHUB_EVENT_PATH = originalEnv.GITHUB_EVENT_PATH;
+    }
+    if (originalEnv.GITHUB_TOKEN === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = originalEnv.GITHUB_TOKEN;
+    }
+    if (originalEnv.OPENAI_API_KEY === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
+    }
+
+    expect(readEventFile).toHaveBeenCalledWith('event.json');
+    expect(createPullRequestFilesClientFromToken).toHaveBeenCalledWith(
+      'github-secret-token'
+    );
+    expect(createCommentsClient).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith(
+      'Summary review comment created for PR #42.'
+    );
+  });
+
+  it('skips safely for non pull_request events on the default runtime path', async () => {
+    const originalEventName = process.env.GITHUB_EVENT_NAME;
+    const info = vi.fn();
+    const error = vi.fn();
+    const createCommentsClient = vi.fn();
+
+    process.env.GITHUB_EVENT_NAME = 'push';
+
+    await run({
+      logger: { info, error },
+      createCommentsClient,
+      loadConfig: vi.fn(() => createReviewerConfigFixture())
+    });
+
+    if (originalEventName === undefined) {
+      delete process.env.GITHUB_EVENT_NAME;
+    } else {
+      process.env.GITHUB_EVENT_NAME = originalEventName;
+    }
+
+    expect(createCommentsClient).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith('Action finished successfully.');
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it('fails clearly when the default runtime path cannot read pull_request event context', async () => {
+    const originalEnv = {
+      GITHUB_EVENT_NAME: process.env.GITHUB_EVENT_NAME,
+      GITHUB_EVENT_PATH: process.env.GITHUB_EVENT_PATH,
+      GITHUB_TOKEN: process.env.GITHUB_TOKEN
+    };
+    const info = vi.fn();
+    const error = vi.fn();
+
+    process.env.GITHUB_EVENT_NAME = 'pull_request';
+    delete process.env.GITHUB_EVENT_PATH;
+    process.env.GITHUB_TOKEN = 'github-secret-token';
+
+    await expect(
+      run({
+        logger: { info, error },
+        loadConfig: vi.fn(() => createReviewerConfigFixture())
+      })
+    ).rejects.toThrow('GITHUB_EVENT_PATH is required for pull_request events.');
+
+    if (originalEnv.GITHUB_EVENT_NAME === undefined) {
+      delete process.env.GITHUB_EVENT_NAME;
+    } else {
+      process.env.GITHUB_EVENT_NAME = originalEnv.GITHUB_EVENT_NAME;
+    }
+    if (originalEnv.GITHUB_EVENT_PATH === undefined) {
+      delete process.env.GITHUB_EVENT_PATH;
+    } else {
+      process.env.GITHUB_EVENT_PATH = originalEnv.GITHUB_EVENT_PATH;
+    }
+    if (originalEnv.GITHUB_TOKEN === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = originalEnv.GITHUB_TOKEN;
+    }
+
+    expect(error).toHaveBeenCalledWith(
+      'Action failed: GITHUB_EVENT_PATH is required for pull_request events.'
+    );
+  });
 });
 
 describe('createLogger', () => {

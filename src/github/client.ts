@@ -16,6 +16,16 @@ export interface PullRequestFilesClient<TFile> {
   ): Promise<GitHubPullRequestFilesPage<TFile>>;
 }
 
+export class GitHubPullRequestFilesApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`GitHub pull request files request failed with status ${status}.`);
+    this.name = 'GitHubPullRequestFilesApiError';
+    this.status = status;
+  }
+}
+
 export interface GitHubIssueCommentApiResponse {
   id: number;
   body?: string | null;
@@ -87,4 +97,59 @@ export interface PullRequestReviewCommentsClient<TReviewComment> {
   createPullRequestReviewComment(
     request: CreatePullRequestReviewCommentRequest
   ): Promise<TReviewComment>;
+}
+
+export function createGitHubPullRequestFilesClientFromEnvironment<
+  TFile extends object = Record<string, unknown>
+>(
+  options: {
+    fetch?: typeof fetch;
+  } = {}
+): PullRequestFilesClient<TFile> | null {
+  const token = process.env.GITHUB_TOKEN?.trim();
+
+  if (!token) {
+    return null;
+  }
+
+  return createGitHubPullRequestFilesClientFromToken(token, options);
+}
+
+export function createGitHubPullRequestFilesClientFromToken<
+  TFile extends object = Record<string, unknown>
+>(
+  token: string,
+  options: {
+    fetch?: typeof fetch;
+  } = {}
+): PullRequestFilesClient<TFile> {
+  const fetchImplementation = options.fetch ?? fetch;
+
+  return {
+    async listPullRequestFiles(request) {
+      const query = new URLSearchParams({
+        page: String(request.page),
+        per_page: String(request.perPage)
+      });
+      const response = await fetchImplementation(
+        `https://api.github.com/repos/${request.owner}/${request.repo}/pulls/${request.pullNumber}/files?${query.toString()}`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'ai-pr-review-assistant'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new GitHubPullRequestFilesApiError(response.status);
+      }
+
+      return {
+        data: (await response.json()) as TFile[]
+      };
+    }
+  };
 }

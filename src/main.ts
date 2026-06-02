@@ -1,10 +1,12 @@
 import { createLogger, type Logger } from './utils/logger';
 import { getErrorMessage } from './utils/errors';
 import type { PullRequestContext } from './github/pr';
+import { collectPullRequestContextFromRuntime } from './github/pr';
 import {
   createGitHubCommentsClientFromEnvironment,
   type GitHubCommentsClient
 } from './github/comments';
+import { type GitHubClient } from './github/pr';
 import { buildReviewContext } from './context/buildReviewContext';
 import {
   filterPullRequestFiles,
@@ -33,8 +35,10 @@ export interface RunOptions {
   logger?: Logger;
   startup?: () => Promise<PullRequestContext | void>;
   createCommentsClient?: () => GitHubCommentsClient | null;
+  createPullRequestFilesClientFromToken?: (token: string) => GitHubClient;
   createLlmClient?: () => LlmReviewClient;
   loadConfig?: () => ReviewerConfig;
+  readEventFile?: (path: string) => string;
 }
 
 export interface RunDeterministicSummaryWorkflowOptions {
@@ -43,10 +47,6 @@ export interface RunDeterministicSummaryWorkflowOptions {
   commentsClient: GitHubCommentsClient;
   llmClient: LlmReviewClient;
   config: ReviewerConfig;
-}
-
-async function defaultStartup(): Promise<void> {
-  return Promise.resolve();
 }
 
 export async function runDeterministicSummaryWorkflow(
@@ -97,12 +97,18 @@ export async function runDeterministicSummaryWorkflow(
 
 export async function run(options: RunOptions = {}): Promise<void> {
   const logger = options.logger ?? createLogger();
-  const startup = options.startup ?? defaultStartup;
   const createCommentsClient =
     options.createCommentsClient ?? createGitHubCommentsClientFromEnvironment;
   const createLlmClient =
     options.createLlmClient ?? createOpenAiReviewClientFromEnvironment;
   const getReviewerConfig = options.loadConfig ?? loadReviewerConfig;
+  const startup =
+    options.startup ??
+    (() =>
+      collectPullRequestContextFromRuntime({
+        readEventFile: options.readEventFile,
+        createClientFromToken: options.createPullRequestFilesClientFromToken
+      }));
 
   logger.info('Action starting.');
 
