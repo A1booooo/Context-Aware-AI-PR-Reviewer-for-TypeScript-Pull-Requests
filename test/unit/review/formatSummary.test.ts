@@ -190,4 +190,33 @@ describe('formatDeterministicSummaryComment', () => {
     expect(body).toContain('Validated AI findings:\n- none');
     expect(body).not.toContain('Authorization: Bearer');
   });
+
+  it('shows downgraded inline findings as file-level summary entries when provided', () => {
+    const filteredFiles = filterPullRequestFiles(
+      [createTextPatchFile('src/feature.ts', '@@ -1 +1 @@\n-old\n+new')],
+      { maxPatchCharacters: 20 }
+    );
+
+    const body = formatDeterministicSummaryComment({
+      metadata: createMetadataFixture(),
+      includedFiles: filteredFiles.includedFiles,
+      excludedFiles: filteredFiles.excludedFiles,
+      downgradedInlineFindings: [
+        {
+          title: 'Snippet did not match any added line.',
+          severity: 'medium',
+          confidence: 0.84,
+          file: 'src/feature.ts',
+          codeSnippet: 'const missing = true;',
+          reason: 'no_match'
+        }
+      ]
+    });
+
+    expect(body).toContain('Downgraded inline findings:');
+    expect(body).toContain(
+      '- [medium] src/feature.ts: Snippet did not match any added line. (reason: no_match, confidence 0.84)'
+    );
+    expect(body).not.toContain('const missing = true;');
+  });
 });

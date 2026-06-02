@@ -1,4 +1,5 @@
 import type { ExcludedDiffFile, IncludedDiffFile } from '../diff/filterFiles';
+import type { DowngradedInlineFinding } from '../diff/matchSnippet';
 import type { PullRequestMetadata } from '../github/pr';
 import type { ReviewContextMetadata } from '../context/buildReviewContext';
 import type { SummaryFinding } from '../llm/schema';
@@ -20,6 +21,7 @@ export interface FormatDeterministicSummaryCommentOptions {
   excludedFiles: ExcludedDiffFile[];
   reviewContext?: ReviewContextMetadata;
   aiReview?: SummaryAiReview;
+  downgradedInlineFindings?: DowngradedInlineFinding[];
 }
 
 export type SummaryAiReview =
@@ -141,6 +143,18 @@ export function formatDeterministicSummaryComment(
     }
   }
 
+  lines.push('', 'Downgraded inline findings:');
+
+  if (!options.downgradedInlineFindings || options.downgradedInlineFindings.length === 0) {
+    lines.push('- none');
+  } else {
+    for (const finding of sortDowngradedInlineFindings(options.downgradedInlineFindings)) {
+      lines.push(
+        `- [${finding.severity}] ${finding.file}: ${finding.title} (reason: ${finding.reason}, confidence ${finding.confidence.toFixed(2)})`
+      );
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -175,4 +189,20 @@ function compareSeverity(left: SummaryFinding['severity'], right: SummaryFinding
   } as const;
 
   return severityRank[left] - severityRank[right];
+}
+
+function sortDowngradedInlineFindings(
+  findings: DowngradedInlineFinding[]
+): DowngradedInlineFinding[] {
+  return [...findings].sort((left, right) => {
+    if (left.file !== right.file) {
+      return left.file.localeCompare(right.file);
+    }
+
+    if (left.severity !== right.severity) {
+      return compareSeverity(left.severity, right.severity);
+    }
+
+    return right.confidence - left.confidence;
+  });
 }
