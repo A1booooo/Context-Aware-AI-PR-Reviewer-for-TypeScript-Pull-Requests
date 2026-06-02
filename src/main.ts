@@ -5,6 +5,7 @@ import {
   createGitHubCommentsClientFromEnvironment,
   type GitHubCommentsClient
 } from './github/comments';
+import { buildReviewContext } from './context/buildReviewContext';
 import { filterPullRequestFiles } from './diff/filterFiles';
 import { publishDeterministicSummary } from './review/publishSummary';
 import {
@@ -39,10 +40,17 @@ export async function runDeterministicSummaryWorkflow(
     maxPatchCharacters: options.config.max_patch_chars_per_file,
     maxIncludedFiles: options.config.max_files
   });
+  const reviewContext = await buildReviewContext({
+    metadata: options.pullRequestContext.metadata,
+    includedFiles: filteredFiles.includedFiles,
+    excludedFiles: filteredFiles.excludedFiles,
+    config: options.config
+  });
   const result = await publishDeterministicSummary({
     metadata: options.pullRequestContext.metadata,
     includedFiles: filteredFiles.includedFiles,
     excludedFiles: filteredFiles.excludedFiles,
+    reviewContext: reviewContext.metadata,
     client: options.commentsClient
   });
 

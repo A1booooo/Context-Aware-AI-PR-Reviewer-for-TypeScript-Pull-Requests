@@ -90,6 +90,20 @@ export interface PullRequestContext {
   files: PullRequestChangedFile[];
 }
 
+export interface PullRequestFileContent {
+  path: string;
+  content: string;
+}
+
+export interface PullRequestFileContentReader {
+  readFile(request: {
+    owner: string;
+    repo: string;
+    ref: string;
+    path: string;
+  }): Promise<PullRequestFileContent | null>;
+}
+
 export interface CollectPullRequestContextOptions {
   context: GitHubActionContextLike;
   client: GitHubClient;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatDeterministicSummaryComment } from '../../../src/review/formatSummary';
+import type { ReviewContextMetadata } from '../../../src/context/buildReviewContext';
 import type { PullRequestMetadata } from '../../../src/github/pr';
 import {
   createDeletedFile,
@@ -25,6 +26,23 @@ function createMetadataFixture(): PullRequestMetadata {
       ref: 'feature/task-4',
       sha: 'head-sha'
     }
+  };
+}
+
+function createReviewContextMetadataFixture(): ReviewContextMetadata {
+  return {
+    includedFilesCount: 2,
+    excludedFilesCount: 2,
+    truncatedFilesCount: 1,
+    truncatedFiles: ['src/truncated.ts'],
+    totalPatchCharacters: 42,
+    fullFileContext: {
+      requested: true,
+      mode: 'patch_only',
+      reason: 'no_reader',
+      includedFilesCount: 0
+    },
+    notes: ['Full file context fallback: no full file reader was provided.']
   };
 }
 
@@ -84,5 +102,25 @@ describe('formatDeterministicSummaryComment', () => {
     expect(body).toContain('- src/truncated.ts');
     expect(body).toContain('Included file summary:');
     expect(body).toContain('- src/feature.ts');
+  });
+
+  it('reports deterministic review context status without any llm findings', () => {
+    const filteredFiles = filterPullRequestFiles(
+      [createTextPatchFile('src/feature.ts', '@@ -1 +1 @@\n-old\n+new')],
+      { maxPatchCharacters: 20 }
+    );
+
+    const body = formatDeterministicSummaryComment({
+      metadata: createMetadataFixture(),
+      includedFiles: filteredFiles.includedFiles,
+      excludedFiles: filteredFiles.excludedFiles,
+      reviewContext: createReviewContextMetadataFixture()
+    });
+
+    expect(body).toContain('This is a deterministic pre-LLM summary.');
+    expect(body).toContain('Context status:');
+    expect(body).toContain('- full file context mode: patch_only');
+    expect(body).toContain('- full file context reason: no_reader');
+    expect(body).not.toContain('LLM findings');
   });
 });

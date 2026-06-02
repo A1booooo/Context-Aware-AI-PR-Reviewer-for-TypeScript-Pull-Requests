@@ -7,7 +7,8 @@ async function publishDeterministicSummary(options) {
     const body = (0, formatSummary_1.formatDeterministicSummaryComment)({
         metadata: options.metadata,
         includedFiles: options.includedFiles,
-        excludedFiles: options.excludedFiles
+        excludedFiles: options.excludedFiles,
+        reviewContext: options.reviewContext
     });
     return (0, comments_1.upsertPullRequestCommentByMarker)({
         owner: options.metadata.owner,

@@ -5,6 +5,7 @@ exports.run = run;
 const logger_1 = require("./utils/logger");
 const errors_1 = require("./utils/errors");
 const comments_1 = require("./github/comments");
+const buildReviewContext_1 = require("./context/buildReviewContext");
 const filterFiles_1 = require("./diff/filterFiles");
 const publishSummary_1 = require("./review/publishSummary");
 const loadConfig_1 = require("./config/loadConfig");
@@ -18,10 +19,17 @@ async function runDeterministicSummaryWorkflow(options) {
         maxPatchCharacters: options.config.max_patch_chars_per_file,
         maxIncludedFiles: options.config.max_files
     });
+    const reviewContext = await (0, buildReviewContext_1.buildReviewContext)({
+        metadata: options.pullRequestContext.metadata,
+        includedFiles: filteredFiles.includedFiles,
+        excludedFiles: filteredFiles.excludedFiles,
+        config: options.config
+    });
     const result = await (0, publishSummary_1.publishDeterministicSummary)({
         metadata: options.pullRequestContext.metadata,
         includedFiles: filteredFiles.includedFiles,
         excludedFiles: filteredFiles.excludedFiles,
+        reviewContext: reviewContext.metadata,
         client: options.commentsClient
     });
     logger.info(`Deterministic pre-LLM summary comment ${result.action} for PR #${options.pullRequestContext.metadata.pullNumber}.`);
