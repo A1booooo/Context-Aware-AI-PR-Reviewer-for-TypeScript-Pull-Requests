@@ -31,6 +31,7 @@ export const DEFAULT_MINIFIED_FILE_SUFFIXES = [
 export type ExcludedFileReason =
   | 'deleted'
   | 'missing_patch'
+  | 'configured_exclude'
   | 'generated'
   | 'lock_file'
   | 'minified'
@@ -49,6 +50,8 @@ export interface ExcludedDiffFile {
 
 export interface FilterPullRequestFilesOptions {
   maxPatchCharacters?: number;
+  excludePatterns?: string[];
+  maxIncludedFiles?: number;
 }
 
 export interface FilterPullRequestFilesResult {
@@ -75,9 +78,10 @@ export function filterPullRequestFiles(
   const excludedFiles: ExcludedDiffFile[] = [];
   const maxPatchCharacters =
     options.maxPatchCharacters ?? DEFAULT_DIFF_FILTER_RULES.maxPatchCharacters;
+  const excludePatterns = options.excludePatterns ?? [];
 
   for (const file of files) {
-    const reason = getExclusionReason(file);
+    const reason = getExclusionReason(file, excludePatterns);
 
     if (reason) {
       excludedFiles.push({
@@ -104,14 +108,20 @@ export function filterPullRequestFiles(
     });
   }
 
+  const maxIncludedFiles = options.maxIncludedFiles;
+
   return {
-    includedFiles,
+    includedFiles:
+      typeof maxIncludedFiles === 'number'
+        ? includedFiles.slice(0, maxIncludedFiles)
+        : includedFiles,
     excludedFiles
   };
 }
 
 function getExclusionReason(
-  file: PullRequestChangedFile
+  file: PullRequestChangedFile,
+  excludePatterns: string[]
 ): ExcludedFileReason | null {
   if (file.kind === 'deleted') {
     return 'deleted';
@@ -122,6 +132,10 @@ function getExclusionReason(
   }
 
   const normalizedPath = normalizePath(file.filename);
+
+  if (matchesConfiguredExcludePattern(normalizedPath, excludePatterns)) {
+    return 'configured_exclude';
+  }
 
   if (isGeneratedFile(normalizedPath)) {
     return 'generated';
@@ -144,6 +158,31 @@ function getExclusionReason(
 
 function normalizePath(filename: string): string {
   return filename.replace(/\\/g, '/').toLowerCase();
+}
+
+function matchesConfiguredExcludePattern(
+  normalizedPath: string,
+  excludePatterns: string[]
+): boolean {
+  return excludePatterns.some((pattern) =>
+    matchesExcludePattern(normalizedPath, normalizePath(pattern))
+  );
+}
+
+function matchesExcludePattern(
+  normalizedPath: string,
+  normalizedPattern: string
+): boolean {
+  if (normalizedPattern.endsWith('/**')) {
+    const directoryPrefix = normalizedPattern.slice(0, -2);
+    return normalizedPath.startsWith(directoryPrefix);
+  }
+
+  if (normalizedPattern.startsWith('*.')) {
+    return normalizedPath.endsWith(normalizedPattern.slice(1));
+  }
+
+  return normalizedPath === normalizedPattern;
 }
 
 function isGeneratedFile(normalizedPath: string): boolean {

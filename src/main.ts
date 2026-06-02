@@ -7,17 +7,23 @@ import {
 } from './github/comments';
 import { filterPullRequestFiles } from './diff/filterFiles';
 import { publishDeterministicSummary } from './review/publishSummary';
+import {
+  loadReviewerConfig
+} from './config/loadConfig';
+import type { ReviewerConfig } from './config/schema';
 
 export interface RunOptions {
   logger?: Logger;
   startup?: () => Promise<PullRequestContext | void>;
   createCommentsClient?: () => GitHubCommentsClient | null;
+  loadConfig?: () => ReviewerConfig;
 }
 
 export interface RunDeterministicSummaryWorkflowOptions {
   logger?: Logger;
   pullRequestContext: PullRequestContext;
   commentsClient: GitHubCommentsClient;
+  config: ReviewerConfig;
 }
 
 async function defaultStartup(): Promise<void> {
@@ -28,7 +34,11 @@ export async function runDeterministicSummaryWorkflow(
   options: RunDeterministicSummaryWorkflowOptions
 ) {
   const logger = options.logger ?? createLogger();
-  const filteredFiles = filterPullRequestFiles(options.pullRequestContext.files);
+  const filteredFiles = filterPullRequestFiles(options.pullRequestContext.files, {
+    excludePatterns: options.config.exclude,
+    maxPatchCharacters: options.config.max_patch_chars_per_file,
+    maxIncludedFiles: options.config.max_files
+  });
   const result = await publishDeterministicSummary({
     metadata: options.pullRequestContext.metadata,
     includedFiles: filteredFiles.includedFiles,
@@ -48,10 +58,12 @@ export async function run(options: RunOptions = {}): Promise<void> {
   const startup = options.startup ?? defaultStartup;
   const createCommentsClient =
     options.createCommentsClient ?? createGitHubCommentsClientFromEnvironment;
+  const getReviewerConfig = options.loadConfig ?? loadReviewerConfig;
 
   logger.info('Action starting.');
 
   try {
+    const config = getReviewerConfig();
     const pullRequestContext = await startup();
 
     if (pullRequestContext) {
@@ -61,7 +73,8 @@ export async function run(options: RunOptions = {}): Promise<void> {
         await runDeterministicSummaryWorkflow({
           logger,
           pullRequestContext,
-          commentsClient
+          commentsClient,
+          config
         });
       } else {
         logger.info(
