@@ -1,6 +1,9 @@
-import type {
-  PullRequestFilesClient,
-  PullRequestFilesRequest
+import fs from 'node:fs';
+
+import {
+  createGitHubPullRequestFilesClientFromToken,
+  type PullRequestFilesClient,
+  type PullRequestFilesRequest
 } from './client';
 
 const FILES_PER_PAGE = 100;
@@ -28,6 +31,18 @@ export interface GitHubActionContextLike {
       };
     };
   };
+}
+
+interface GitHubRuntimeRepositoryPayload {
+  name?: string;
+  owner?: {
+    login?: string;
+  };
+}
+
+interface GitHubRuntimeEventPayload {
+  repository?: GitHubRuntimeRepositoryPayload;
+  pull_request?: GitHubActionContextLike['payload']['pull_request'];
 }
 
 export interface PullRequestMetadata {
@@ -109,7 +124,50 @@ export interface CollectPullRequestContextOptions {
   client: GitHubClient;
 }
 
+export interface CollectPullRequestContextFromRuntimeOptions {
+  env?: NodeJS.ProcessEnv;
+  readEventFile?: (path: string) => string;
+  createClientFromToken?: (token: string) => GitHubClient;
+}
+
 export type GitHubClient = PullRequestFilesClient<GitHubPullRequestFileApiResponse>;
+
+export async function collectPullRequestContextFromRuntime(
+  options: CollectPullRequestContextFromRuntimeOptions = {}
+): Promise<PullRequestContext | void> {
+  const env = options.env ?? process.env;
+  const eventName = env.GITHUB_EVENT_NAME?.trim();
+
+  if (eventName !== 'pull_request') {
+    return undefined;
+  }
+
+  const eventPath = env.GITHUB_EVENT_PATH?.trim();
+
+  if (!eventPath) {
+    throw new Error('GITHUB_EVENT_PATH is required for pull_request events.');
+  }
+
+  const readEventFile = options.readEventFile ?? readGitHubEventFile;
+  const rawEventPayload = readEventFile(eventPath);
+  const eventPayload = parseGitHubEventPayload(rawEventPayload);
+  const context = createGitHubActionContextFromRuntimePayload(eventPayload, env);
+  const token = env.GITHUB_TOKEN?.trim();
+
+  if (!token) {
+    throw new Error(
+      'GITHUB_TOKEN is required to collect pull request files for pull_request events.'
+    );
+  }
+
+  const createClientFromToken =
+    options.createClientFromToken ?? defaultCreateClientFromToken;
+
+  return collectPullRequestContext({
+    context,
+    client: createClientFromToken(token)
+  });
+}
 
 export function getPullRequestMetadata(
   context: GitHubActionContextLike
@@ -218,4 +276,74 @@ function classifyPullRequestFile(
     kind: 'missing_patch',
     patch: null
   };
+}
+
+function readGitHubEventFile(path: string): string {
+  try {
+    return fs.readFileSync(path, 'utf8');
+  } catch {
+    throw new Error(`Failed to read GitHub event payload from ${path}.`);
+  }
+}
+
+function parseGitHubEventPayload(value: string): GitHubRuntimeEventPayload {
+  try {
+    return JSON.parse(value) as GitHubRuntimeEventPayload;
+  } catch {
+    throw new Error('GitHub event payload is not valid JSON.');
+  }
+}
+
+function createGitHubActionContextFromRuntimePayload(
+  payload: GitHubRuntimeEventPayload,
+  env: NodeJS.ProcessEnv
+): GitHubActionContextLike {
+  const repository = resolveRuntimeRepository(payload.repository, env);
+
+  return {
+    repo: repository,
+    payload: {
+      pull_request: payload.pull_request
+    }
+  };
+}
+
+function resolveRuntimeRepository(
+  repository: GitHubRuntimeRepositoryPayload | undefined,
+  env: NodeJS.ProcessEnv
+): GitHubActionContextLike['repo'] {
+  const owner = repository?.owner?.login?.trim();
+  const repo = repository?.name?.trim();
+
+  if (owner && repo) {
+    return {
+      owner,
+      repo
+    };
+  }
+
+  const repositoryEnv = env.GITHUB_REPOSITORY?.trim();
+
+  if (!repositoryEnv) {
+    throw new Error(
+      'GitHub event payload is missing repository metadata and GITHUB_REPOSITORY is unavailable.'
+    );
+  }
+
+  const [envOwner, envRepo] = repositoryEnv.split('/');
+
+  if (!envOwner || !envRepo) {
+    throw new Error('GITHUB_REPOSITORY must be in the form "owner/repo".');
+  }
+
+  return {
+    owner: envOwner,
+    repo: envRepo
+  };
+}
+
+function defaultCreateClientFromToken(token: string): GitHubClient {
+  return createGitHubPullRequestFilesClientFromToken<GitHubPullRequestFileApiResponse>(
+    token
+  );
 }
