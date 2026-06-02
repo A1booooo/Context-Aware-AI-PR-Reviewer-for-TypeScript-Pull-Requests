@@ -56,6 +56,15 @@ function formatDeterministicSummaryComment(options) {
             lines.push(`- ${file.filename} (${file.truncatedPatchLength}/${file.originalPatchLength} chars kept)`);
         }
     }
+    lines.push('', 'Context status:');
+    if (!options.reviewContext) {
+        lines.push('- not built');
+    }
+    else {
+        lines.push(`- full file context mode: ${options.reviewContext.fullFileContext.mode}`);
+        lines.push(`- full file context reason: ${options.reviewContext.fullFileContext.reason}`);
+        lines.push(`- metadata notes count: ${options.reviewContext.notes.length}`);
+    }
     return lines.join('\n');
 }
 function summarizeExcludedReasons(excludedFiles) {

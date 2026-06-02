@@ -3,6 +3,7 @@ import {
   type GitHubCommentsClient,
   upsertPullRequestCommentByMarker
 } from '../github/comments';
+import type { ReviewContextMetadata } from '../context/buildReviewContext';
 import type { PullRequestMetadata } from '../github/pr';
 
 import {
@@ -14,6 +15,7 @@ export interface PublishDeterministicSummaryOptions {
   metadata: PullRequestMetadata;
   includedFiles: IncludedDiffFile[];
   excludedFiles: ExcludedDiffFile[];
+  reviewContext?: ReviewContextMetadata;
   client: GitHubCommentsClient;
 }
 
@@ -23,7 +25,8 @@ export async function publishDeterministicSummary(
   const body = formatDeterministicSummaryComment({
     metadata: options.metadata,
     includedFiles: options.includedFiles,
-    excludedFiles: options.excludedFiles
+    excludedFiles: options.excludedFiles,
+    reviewContext: options.reviewContext
   });
 
   return upsertPullRequestCommentByMarker({

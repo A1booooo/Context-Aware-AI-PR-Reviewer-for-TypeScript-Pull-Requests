@@ -1,5 +1,6 @@
 import type { ExcludedDiffFile, IncludedDiffFile } from '../diff/filterFiles';
 import type { PullRequestMetadata } from '../github/pr';
+import type { ReviewContextMetadata } from '../context/buildReviewContext';
 
 export const DETERMINISTIC_SUMMARY_MARKER = '<!-- ai-pr-review-assistant -->';
 
@@ -16,6 +17,7 @@ export interface FormatDeterministicSummaryCommentOptions {
   metadata: PullRequestMetadata;
   includedFiles: IncludedDiffFile[];
   excludedFiles: ExcludedDiffFile[];
+  reviewContext?: ReviewContextMetadata;
 }
 
 export function formatDeterministicSummaryComment(
@@ -72,6 +74,18 @@ export function formatDeterministicSummaryComment(
         `- ${file.filename} (${file.truncatedPatchLength}/${file.originalPatchLength} chars kept)`
       );
     }
+  }
+
+  lines.push('', 'Context status:');
+
+  if (!options.reviewContext) {
+    lines.push('- not built');
+  } else {
+    lines.push(`- full file context mode: ${options.reviewContext.fullFileContext.mode}`);
+    lines.push(`- full file context reason: ${options.reviewContext.fullFileContext.reason}`);
+    lines.push(
+      `- metadata notes count: ${options.reviewContext.notes.length}`
+    );
   }
 
   return lines.join('\n');
