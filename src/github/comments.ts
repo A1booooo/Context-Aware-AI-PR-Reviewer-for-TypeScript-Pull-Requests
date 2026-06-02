@@ -1,7 +1,10 @@
 import type {
+  CreatePullRequestReviewCommentRequest,
   CreateIssueCommentRequest,
   GitHubIssueCommentApiResponse,
+  GitHubPullRequestReviewCommentApiResponse,
   PullRequestCommentsClient,
+  PullRequestReviewCommentsClient,
   PullRequestCommentsRequest,
   UpdateIssueCommentRequest
 } from './client';
@@ -11,6 +14,16 @@ export interface PullRequestComment {
   body: string;
   authorLogin: string;
   authorType: string;
+}
+
+export class GitHubCommentsApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`GitHub comments request failed with status ${status}.`);
+    this.name = 'GitHubCommentsApiError';
+    this.status = status;
+  }
 }
 
 export interface ListPullRequestCommentsOptions {
@@ -35,7 +48,8 @@ export interface UpsertPullRequestCommentByMarkerResult {
 }
 
 export type GitHubCommentsClient =
-  PullRequestCommentsClient<GitHubIssueCommentApiResponse>;
+  PullRequestCommentsClient<GitHubIssueCommentApiResponse> &
+  PullRequestReviewCommentsClient<GitHubPullRequestReviewCommentApiResponse>;
 
 export function createGitHubCommentsClientFromEnvironment():
   | GitHubCommentsClient
@@ -79,6 +93,20 @@ export function createGitHubCommentsClientFromToken(
         path: buildIssueCommentUpdatePath(request),
         body: {
           body: request.body
+        }
+      });
+    },
+    createPullRequestReviewComment(request) {
+      return requestGitHubCommentsApi<GitHubPullRequestReviewCommentApiResponse>({
+        token,
+        method: 'POST',
+        path: buildPullRequestReviewCommentsPath(request),
+        body: {
+          body: request.body,
+          commit_id: request.commitId,
+          path: request.path,
+          line: request.line,
+          side: request.side
         }
       });
     }
@@ -158,7 +186,7 @@ async function requestGitHubCommentsApi<T>(options: {
   token: string;
   method: 'GET' | 'POST' | 'PATCH';
   path: string;
-  body?: { body: string };
+  body?: Record<string, number | string>;
 }): Promise<T> {
   const response = await fetch(`https://api.github.com${options.path}`, {
     method: options.method,
@@ -172,9 +200,7 @@ async function requestGitHubCommentsApi<T>(options: {
   });
 
   if (!response.ok) {
-    throw new Error(
-      `GitHub comments request failed with status ${response.status}.`
-    );
+    throw new GitHubCommentsApiError(response.status);
   }
 
   return (await response.json()) as T;
@@ -192,4 +218,10 @@ function buildIssueCommentsPath(request: CreateIssueCommentRequest): string {
 
 function buildIssueCommentUpdatePath(request: UpdateIssueCommentRequest): string {
   return `/repos/${request.owner}/${request.repo}/issues/comments/${request.commentId}`;
+}
+
+function buildPullRequestReviewCommentsPath(
+  request: CreatePullRequestReviewCommentRequest
+): string {
+  return `/repos/${request.owner}/${request.repo}/pulls/${request.pullNumber}/comments`;
 }

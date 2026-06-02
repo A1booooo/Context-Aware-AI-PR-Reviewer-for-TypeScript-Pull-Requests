@@ -1,9 +1,19 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.GitHubCommentsApiError = void 0;
 exports.createGitHubCommentsClientFromEnvironment = createGitHubCommentsClientFromEnvironment;
 exports.createGitHubCommentsClientFromToken = createGitHubCommentsClientFromToken;
 exports.listPullRequestComments = listPullRequestComments;
 exports.upsertPullRequestCommentByMarker = upsertPullRequestCommentByMarker;
+class GitHubCommentsApiError extends Error {
+    status;
+    constructor(status) {
+        super(`GitHub comments request failed with status ${status}.`);
+        this.name = 'GitHubCommentsApiError';
+        this.status = status;
+    }
+}
+exports.GitHubCommentsApiError = GitHubCommentsApiError;
 function createGitHubCommentsClientFromEnvironment() {
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
@@ -39,6 +49,20 @@ function createGitHubCommentsClientFromToken(token) {
                 path: buildIssueCommentUpdatePath(request),
                 body: {
                     body: request.body
+                }
+            });
+        },
+        createPullRequestReviewComment(request) {
+            return requestGitHubCommentsApi({
+                token,
+                method: 'POST',
+                path: buildPullRequestReviewCommentsPath(request),
+                body: {
+                    body: request.body,
+                    commit_id: request.commitId,
+                    path: request.path,
+                    line: request.line,
+                    side: request.side
                 }
             });
         }
@@ -101,7 +125,7 @@ async function requestGitHubCommentsApi(options) {
         body: options.body ? JSON.stringify(options.body) : undefined
     });
     if (!response.ok) {
-        throw new Error(`GitHub comments request failed with status ${response.status}.`);
+        throw new GitHubCommentsApiError(response.status);
     }
     return (await response.json());
 }
@@ -113,4 +137,7 @@ function buildIssueCommentsPath(request) {
 }
 function buildIssueCommentUpdatePath(request) {
     return `/repos/${request.owner}/${request.repo}/issues/comments/${request.commentId}`;
+}
+function buildPullRequestReviewCommentsPath(request) {
+    return `/repos/${request.owner}/${request.repo}/pulls/${request.pullNumber}/comments`;
 }

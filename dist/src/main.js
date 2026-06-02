@@ -7,7 +7,9 @@ const errors_1 = require("./utils/errors");
 const comments_1 = require("./github/comments");
 const buildReviewContext_1 = require("./context/buildReviewContext");
 const filterFiles_1 = require("./diff/filterFiles");
+const matchSnippet_1 = require("./diff/matchSnippet");
 const publishSummary_1 = require("./review/publishSummary");
+const publishInline_1 = require("./review/publishInline");
 const client_1 = require("./llm/client");
 const parseReview_1 = require("./llm/parseReview");
 const loadConfig_1 = require("./config/loadConfig");
@@ -29,14 +31,25 @@ async function runDeterministicSummaryWorkflow(options) {
     });
     const aiReview = await buildSummaryAiReview({
         llmClient: options.llmClient,
-        reviewContext
+        reviewContext,
+        includedFiles: filteredFiles.includedFiles,
+        config: options.config
+    });
+    const inlinePublishResult = await (0, publishInline_1.publishValidatedInlineComments)({
+        metadata: options.pullRequestContext.metadata,
+        findings: aiReview.validatedInlineFindings,
+        client: options.commentsClient
     });
     const result = await (0, publishSummary_1.publishDeterministicSummary)({
         metadata: options.pullRequestContext.metadata,
         includedFiles: filteredFiles.includedFiles,
         excludedFiles: filteredFiles.excludedFiles,
         reviewContext: reviewContext.metadata,
-        aiReview,
+        aiReview: aiReview.summary,
+        downgradedInlineFindings: [
+            ...aiReview.downgradedInlineFindings,
+            ...inlinePublishResult.downgradedFindings
+        ],
         client: options.commentsClient
     });
     logger.info(`Summary review comment ${result.action} for PR #${options.pullRequestContext.metadata.pullNumber}.`);
@@ -84,32 +97,57 @@ async function buildSummaryAiReview(options) {
         reviewContext: options.reviewContext
     });
     if (llmResult.status === 'success') {
-        return parseSummaryAiReview(llmResult);
+        return parseSummaryAiReview(llmResult, {
+            includedFiles: options.includedFiles,
+            config: options.config
+        });
     }
     if (llmResult.status === 'skipped') {
         return {
-            status: 'skipped',
-            code: llmResult.code,
-            message: llmResult.message
+            summary: {
+                status: 'skipped',
+                code: llmResult.code,
+                message: llmResult.message
+            },
+            validatedInlineFindings: [],
+            downgradedInlineFindings: []
         };
     }
     return {
-        status: 'degraded',
-        code: llmResult.code,
-        message: llmResult.message
+        summary: {
+            status: 'degraded',
+            code: llmResult.code,
+            message: llmResult.message
+        },
+        validatedInlineFindings: [],
+        downgradedInlineFindings: []
     };
 }
-function parseSummaryAiReview(llmResult) {
+function parseSummaryAiReview(llmResult, options) {
     const parsedReview = (0, parseReview_1.parseStructuredReview)(llmResult.outputText);
     if (!parsedReview.ok) {
         return {
-            status: 'degraded',
-            code: parsedReview.error.code,
-            message: 'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+            summary: {
+                status: 'degraded',
+                code: parsedReview.error.code,
+                message: 'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+            },
+            validatedInlineFindings: [],
+            downgradedInlineFindings: []
         };
     }
+    const matchedInlineFindings = (0, matchSnippet_1.matchCandidateInlineFindings)({
+        inlineFindings: parsedReview.inlineFindings,
+        patches: options.includedFiles,
+        confidenceThreshold: options.config.review.confidence_threshold,
+        maxInlineComments: options.config.review.max_inline_comments
+    });
     return {
-        status: 'completed',
-        findings: parsedReview.summaryFindings
+        summary: {
+            status: 'completed',
+            findings: parsedReview.summaryFindings
+        },
+        validatedInlineFindings: matchedInlineFindings.validatedInlineFindings,
+        downgradedInlineFindings: matchedInlineFindings.downgradedFindings
     };
 }

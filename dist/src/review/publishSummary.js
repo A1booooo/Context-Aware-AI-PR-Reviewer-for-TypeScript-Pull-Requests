@@ -9,7 +9,8 @@ async function publishDeterministicSummary(options) {
         includedFiles: options.includedFiles,
         excludedFiles: options.excludedFiles,
         reviewContext: options.reviewContext,
-        aiReview: options.aiReview
+        aiReview: options.aiReview,
+        downgradedInlineFindings: options.downgradedInlineFindings
     });
     return (0, comments_1.upsertPullRequestCommentByMarker)({
         owner: options.metadata.owner,
