@@ -8,6 +8,11 @@ import { createLogger } from '../../src/utils/logger';
 import type { PullRequestContext } from '../../src/github/pr';
 import type { GitHubCommentsClient } from '../../src/github/comments';
 import type { ReviewerConfig } from '../../src/config/schema';
+import type { LlmReviewClient } from '../../src/llm/client';
+import {
+  createMalformedReviewJsonOutput,
+  createValidReviewJsonOutput
+} from '../fixtures/llmOutputs';
 
 function createPullRequestContextFixture(): PullRequestContext {
   return {
@@ -91,6 +96,17 @@ function createReviewerConfigFixture(
   };
 }
 
+function createLlmClientFixture(
+  outputText: string = createValidReviewJsonOutput()
+): LlmReviewClient {
+  return {
+    requestStructuredReview: vi.fn(async () => ({
+      status: 'success',
+      outputText
+    }))
+  };
+}
+
 describe('run', () => {
   it('logs startup and completion for the minimal action flow', async () => {
     const info = vi.fn();
@@ -131,18 +147,21 @@ describe('run', () => {
     const error = vi.fn();
     const commentsClient = createCommentsClientFixture();
     const createCommentsClient = vi.fn(() => commentsClient);
+    const createLlmClient = vi.fn(() => createLlmClientFixture());
 
     await run({
       logger: { info, error },
       startup: vi.fn(async () => createPullRequestContextFixture()),
       createCommentsClient,
+      createLlmClient,
       loadConfig: vi.fn(() => createReviewerConfigFixture())
     });
 
     expect(createCommentsClient).toHaveBeenCalledTimes(1);
+    expect(createLlmClient).toHaveBeenCalledTimes(1);
     expect(commentsClient.createIssueComment).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenCalledWith(
-      'Deterministic pre-LLM summary comment created for PR #42.'
+      'Summary review comment created for PR #42.'
     );
     expect(info).toHaveBeenCalledWith('Action finished successfully.');
     expect(error).not.toHaveBeenCalled();
@@ -233,11 +252,13 @@ describe('runDeterministicSummaryWorkflow', () => {
     const info = vi.fn();
     const error = vi.fn();
     const commentsClient = createCommentsClientFixture();
+    const llmClient = createLlmClientFixture();
 
     const result = await runDeterministicSummaryWorkflow({
       logger: { info, error },
       pullRequestContext: createPullRequestContextFixture(),
       commentsClient,
+      llmClient,
       config: createReviewerConfigFixture()
     });
 
@@ -247,10 +268,15 @@ describe('runDeterministicSummaryWorkflow', () => {
       owner: 'octo-org',
       repo: 'review-repo',
       issueNumber: 42,
-      body: expect.stringContaining('Included files count: 1')
+      body: expect.stringContaining('Validated AI findings:')
     });
+    const createdBody = vi.mocked(commentsClient.createIssueComment).mock.calls[0]?.[0]?.body;
+    expect(createdBody).toContain(
+      '[high] Missing null guard before property access (confidence 0.92)'
+    );
+    expect(createdBody).not.toContain('useEffect(() => syncCount(count), [])');
     expect(info).toHaveBeenCalledWith(
-      'Deterministic pre-LLM summary comment created for PR #42.'
+      'Summary review comment created for PR #42.'
     );
     expect(commentsClient.updateIssueComment).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
@@ -296,6 +322,7 @@ describe('runDeterministicSummaryWorkflow', () => {
       logger: { info, error },
       pullRequestContext,
       commentsClient,
+      llmClient: createLlmClientFixture(),
       config: createReviewerConfigFixture({
         max_files: 1,
         max_patch_chars_per_file: 20
@@ -317,5 +344,34 @@ describe('runDeterministicSummaryWorkflow', () => {
     expect(firstCommentRequest?.body).toContain(
       'Truncated files summary:\n- src/one.ts'
     );
+  });
+
+  it('publishes a safe degradation summary when the model output is malformed', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const commentsClient = createCommentsClientFixture();
+    const unsafeModelOutput =
+      `${createMalformedReviewJsonOutput()}\nAuthorization: Bearer leaked-token`;
+
+    await runDeterministicSummaryWorkflow({
+      logger: { info, error },
+      pullRequestContext: createPullRequestContextFixture(),
+      commentsClient,
+      llmClient: createLlmClientFixture(unsafeModelOutput),
+      config: createReviewerConfigFixture()
+    });
+
+    const createdBody = vi.mocked(commentsClient.createIssueComment).mock.calls[0]?.[0]?.body;
+
+    expect(createdBody).toContain('AI review status:');
+    expect(createdBody).toContain('- status: degraded');
+    expect(createdBody).toContain('- reason: parse_error');
+    expect(createdBody).toContain(
+      'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+    );
+    expect(createdBody).not.toContain('leaked-token');
+    expect(createdBody).not.toContain('Authorization: Bearer');
+    expect(createdBody).not.toContain('{"summary_findings"');
+    expect(createdBody).toContain('Validated AI findings:\n- none');
   });
 });

@@ -1,5 +1,9 @@
 name: Context-Aware AI PR Reviewer
 description: Minimal TypeScript GitHub Action scaffold for pull request review startup.
+inputs:
+  openai_api_key:
+    description: OpenAI API key for summary-only AI review
+    required: false
 runs:
   using: node20
   main: dist/src/main.js

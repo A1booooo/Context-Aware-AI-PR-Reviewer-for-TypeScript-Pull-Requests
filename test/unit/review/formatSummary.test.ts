@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDeterministicSummaryComment } from '../../../src/review/formatSummary';
+import {
+  formatDeterministicSummaryComment,
+  type SummaryAiReview
+} from '../../../src/review/formatSummary';
 import type { ReviewContextMetadata } from '../../../src/context/buildReviewContext';
 import type { PullRequestMetadata } from '../../../src/github/pr';
 import {
@@ -46,8 +49,28 @@ function createReviewContextMetadataFixture(): ReviewContextMetadata {
   };
 }
 
+function createCompletedAiReviewFixture(): SummaryAiReview {
+  return {
+    status: 'completed',
+    findings: [
+      {
+        title: 'Missing null guard before property access',
+        severity: 'high',
+        confidence: 0.92,
+        description:
+          'The code reads user.profile.name before confirming profile exists.'
+      },
+      {
+        title: 'Unbounded retry loop can duplicate requests',
+        severity: 'critical',
+        confidence: 0.88
+      }
+    ]
+  };
+}
+
 describe('formatDeterministicSummaryComment', () => {
-  it('includes the fixed marker and deterministic pre-llm wording', () => {
+  it('includes the fixed marker and summary-only ai wording', () => {
     const patch = ['@@ -1,4 +1,4 @@', '-old line', '+new line', '+another line'].join('\n');
     const filteredFiles = filterPullRequestFiles(
       [
@@ -66,7 +89,9 @@ describe('formatDeterministicSummaryComment', () => {
     });
 
     expect(body).toContain('<!-- ai-pr-review-assistant -->');
-    expect(body).toContain('This is a deterministic pre-LLM summary.');
+    expect(body).toContain(
+      'This summary publishes validated AI findings when available.'
+    );
     expect(body).toContain('PR: #42 Improve file loading');
     expect(body).toContain('Changed files count: 4');
     expect(body).toContain('Included files count: 2');
@@ -104,7 +129,7 @@ describe('formatDeterministicSummaryComment', () => {
     expect(body).toContain('- src/feature.ts');
   });
 
-  it('reports deterministic review context status without any llm findings', () => {
+  it('reports review context status and validated ai findings without inline details', () => {
     const filteredFiles = filterPullRequestFiles(
       [createTextPatchFile('src/feature.ts', '@@ -1 +1 @@\n-old\n+new')],
       { maxPatchCharacters: 20 }
@@ -114,13 +139,55 @@ describe('formatDeterministicSummaryComment', () => {
       metadata: createMetadataFixture(),
       includedFiles: filteredFiles.includedFiles,
       excludedFiles: filteredFiles.excludedFiles,
-      reviewContext: createReviewContextMetadataFixture()
+      reviewContext: createReviewContextMetadataFixture(),
+      aiReview: createCompletedAiReviewFixture()
     });
 
-    expect(body).toContain('This is a deterministic pre-LLM summary.');
+    expect(body).toContain(
+      'This summary publishes validated AI findings when available.'
+    );
     expect(body).toContain('Context status:');
     expect(body).toContain('- full file context mode: patch_only');
     expect(body).toContain('- full file context reason: no_reader');
-    expect(body).not.toContain('LLM findings');
+    expect(body).toContain('AI review status:');
+    expect(body).toContain('- status: completed');
+    expect(body).toContain('- validated summary findings count: 2');
+    expect(body).toContain(
+      '[critical] Unbounded retry loop can duplicate requests (confidence 0.88)'
+    );
+    expect(body).toContain(
+      '[high] Missing null guard before property access (confidence 0.92)'
+    );
+    expect(body).toContain(
+      'The code reads user.profile.name before confirming profile exists.'
+    );
+  });
+
+  it('shows safe degradation details without publishing raw model output', () => {
+    const filteredFiles = filterPullRequestFiles(
+      [createTextPatchFile('src/feature.ts', '@@ -1 +1 @@\n-old\n+new')],
+      { maxPatchCharacters: 20 }
+    );
+
+    const body = formatDeterministicSummaryComment({
+      metadata: createMetadataFixture(),
+      includedFiles: filteredFiles.includedFiles,
+      excludedFiles: filteredFiles.excludedFiles,
+      aiReview: {
+        status: 'degraded',
+        code: 'parse_error',
+        message:
+          'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+      }
+    });
+
+    expect(body).toContain('AI review status:');
+    expect(body).toContain('- status: degraded');
+    expect(body).toContain('- reason: parse_error');
+    expect(body).toContain(
+      'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+    );
+    expect(body).toContain('Validated AI findings:\n- none');
+    expect(body).not.toContain('Authorization: Bearer');
   });
 });

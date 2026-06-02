@@ -1,5 +1,27 @@
 # AI PR Review Assistant
 
+## Summary-Only AI Review
+
+Task 8 adds summary-only LLM integration for pull request review comments.
+
+How to provide the OpenAI API key:
+
+- Set `OPENAI_API_KEY` in the workflow environment, or
+- Pass the GitHub Action input `openai_api_key`, which is exposed to the runtime as `INPUT_OPENAI_API_KEY`
+
+Behavior:
+
+- The action sends the structured review context to the LLM provider.
+- The returned model text is parsed and validated before any AI findings are published.
+- Only validated summary findings are included in the PR summary comment.
+- Raw model output is never published in the summary comment.
+
+Degradation behavior:
+
+- Missing API key produces a safe summary skip message. This can happen when fork pull request secrets are unavailable.
+- Timeout, rate limit, provider response shape invalid, and malformed JSON all degrade safely to summary-only status messaging.
+- Inline comments and snippet matching are not part of this task.
+
 ## Reviewer Configuration
 
 Task 5 adds repository-level reviewer configuration through `.ai-pr-review.yml`.

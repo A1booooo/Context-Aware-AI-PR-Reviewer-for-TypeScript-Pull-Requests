@@ -1,6 +1,7 @@
 import type { ExcludedDiffFile, IncludedDiffFile } from '../diff/filterFiles';
 import type { PullRequestMetadata } from '../github/pr';
 import type { ReviewContextMetadata } from '../context/buildReviewContext';
+import type { SummaryFinding } from '../llm/schema';
 
 export const DETERMINISTIC_SUMMARY_MARKER = '<!-- ai-pr-review-assistant -->';
 
@@ -18,7 +19,26 @@ export interface FormatDeterministicSummaryCommentOptions {
   includedFiles: IncludedDiffFile[];
   excludedFiles: ExcludedDiffFile[];
   reviewContext?: ReviewContextMetadata;
+  aiReview?: SummaryAiReview;
 }
+
+export type SummaryAiReview =
+  | {
+      status: 'completed';
+      findings: SummaryFinding[];
+    }
+  | {
+      status: 'skipped' | 'degraded';
+      code:
+        | 'missing_api_key'
+        | 'timeout'
+        | 'rate_limit'
+        | 'provider_response_invalid'
+        | 'request_failed'
+        | 'parse_error'
+        | 'invalid_structure';
+      message: string;
+    };
 
 export function formatDeterministicSummaryComment(
   options: FormatDeterministicSummaryCommentOptions
@@ -36,7 +56,7 @@ export function formatDeterministicSummaryComment(
   const lines = [
     DETERMINISTIC_SUMMARY_MARKER,
     '## PR Summary',
-    'This is a deterministic pre-LLM summary. It does not include AI review findings.',
+    'This summary publishes validated AI findings when available. Raw model output is never published.',
     '',
     `PR: #${options.metadata.pullNumber} ${options.metadata.title}`,
     `Changed files count: ${changedFilesCount}`,
@@ -88,6 +108,39 @@ export function formatDeterministicSummaryComment(
     );
   }
 
+  lines.push('', 'AI review status:');
+
+  if (!options.aiReview) {
+    lines.push('- not requested');
+  } else if (options.aiReview.status === 'completed') {
+    lines.push('- status: completed');
+    lines.push(
+      `- validated summary findings count: ${options.aiReview.findings.length}`
+    );
+  } else {
+    lines.push(`- status: ${options.aiReview.status}`);
+    lines.push(`- reason: ${options.aiReview.code}`);
+    lines.push(`- details: ${options.aiReview.message}`);
+  }
+
+  lines.push('', 'Validated AI findings:');
+
+  if (!options.aiReview || options.aiReview.status !== 'completed') {
+    lines.push('- none');
+  } else if (options.aiReview.findings.length === 0) {
+    lines.push('- none');
+  } else {
+    for (const finding of sortSummaryFindings(options.aiReview.findings)) {
+      lines.push(
+        `- [${finding.severity}] ${finding.title} (confidence ${finding.confidence.toFixed(2)})`
+      );
+
+      if (finding.description) {
+        lines.push(`  ${finding.description}`);
+      }
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -101,4 +154,25 @@ function summarizeExcludedReasons(excludedFiles: ExcludedDiffFile[]): string[] {
   return EXCLUDED_REASON_ORDER.filter((reason) => counts.has(reason)).map(
     (reason) => `- ${reason}: ${counts.get(reason)}`
   );
+}
+
+function sortSummaryFindings(findings: SummaryFinding[]): SummaryFinding[] {
+  return [...findings].sort((left, right) => {
+    if (left.severity !== right.severity) {
+      return compareSeverity(left.severity, right.severity);
+    }
+
+    return right.confidence - left.confidence;
+  });
+}
+
+function compareSeverity(left: SummaryFinding['severity'], right: SummaryFinding['severity']) {
+  const severityRank = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3
+  } as const;
+
+  return severityRank[left] - severityRank[right];
 }
