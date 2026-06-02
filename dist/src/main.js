@@ -1,17 +1,47 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.runDeterministicSummaryWorkflow = runDeterministicSummaryWorkflow;
 exports.run = run;
 const logger_1 = require("./utils/logger");
 const errors_1 = require("./utils/errors");
+const comments_1 = require("./github/comments");
+const filterFiles_1 = require("./diff/filterFiles");
+const publishSummary_1 = require("./review/publishSummary");
 async function defaultStartup() {
     return Promise.resolve();
+}
+async function runDeterministicSummaryWorkflow(options) {
+    const logger = options.logger ?? (0, logger_1.createLogger)();
+    const filteredFiles = (0, filterFiles_1.filterPullRequestFiles)(options.pullRequestContext.files);
+    const result = await (0, publishSummary_1.publishDeterministicSummary)({
+        metadata: options.pullRequestContext.metadata,
+        includedFiles: filteredFiles.includedFiles,
+        excludedFiles: filteredFiles.excludedFiles,
+        client: options.commentsClient
+    });
+    logger.info(`Deterministic pre-LLM summary comment ${result.action} for PR #${options.pullRequestContext.metadata.pullNumber}.`);
+    return result;
 }
 async function run(options = {}) {
     const logger = options.logger ?? (0, logger_1.createLogger)();
     const startup = options.startup ?? defaultStartup;
+    const createCommentsClient = options.createCommentsClient ?? comments_1.createGitHubCommentsClientFromEnvironment;
     logger.info('Action starting.');
     try {
-        await startup();
+        const pullRequestContext = await startup();
+        if (pullRequestContext) {
+            const commentsClient = createCommentsClient();
+            if (commentsClient) {
+                await runDeterministicSummaryWorkflow({
+                    logger,
+                    pullRequestContext,
+                    commentsClient
+                });
+            }
+            else {
+                logger.info('Skipping deterministic summary publish because GITHUB_TOKEN is not configured.');
+            }
+        }
         logger.info('Action finished successfully.');
     }
     catch (error) {

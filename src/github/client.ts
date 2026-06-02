@@ -15,3 +15,48 @@ export interface PullRequestFilesClient<TFile> {
     request: PullRequestFilesRequest
   ): Promise<GitHubPullRequestFilesPage<TFile>>;
 }
+
+export interface GitHubIssueCommentApiResponse {
+  id: number;
+  body?: string | null;
+  user?: {
+    login?: string;
+    type?: string;
+  };
+}
+
+export interface GitHubIssueCommentsPage<TComment> {
+  data: TComment[];
+}
+
+export interface PullRequestCommentsRequest {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+}
+
+export interface CreateIssueCommentRequest {
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  body: string;
+}
+
+export interface UpdateIssueCommentRequest {
+  owner: string;
+  repo: string;
+  commentId: number;
+  body: string;
+}
+
+export interface PullRequestCommentsClient<TComment> {
+  listPullRequestComments(
+    request: PullRequestCommentsRequest
+  ): Promise<GitHubIssueCommentsPage<TComment>>;
+  createIssueComment(
+    request: CreateIssueCommentRequest
+  ): Promise<TComment>;
+  updateIssueComment(
+    request: UpdateIssueCommentRequest
+  ): Promise<TComment>;
+}
