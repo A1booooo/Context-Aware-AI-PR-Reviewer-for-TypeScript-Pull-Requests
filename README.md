@@ -1,11 +1,13 @@
 # Context-Aware AI PR Reviewer
 
+[中文文档](./README.zh-CN.md) | English
+
 A TypeScript GitHub Action project for pull request review summaries driven by structured AI output.
 
 This repository currently contains:
 
 - the diff filtering, truncation, review-context, LLM parsing, summary upsert, and inline-degradation modules
-- the packaged GitHub Action entrypoint in [`action.yml`](/E:/牛牛/action.yml)
+- the packaged GitHub Action entrypoint in [`action.yml`](./action.yml)
 - unit tests and demo fixtures for the implemented review flow
 
 This repository includes a wired default GitHub Action runtime for GitHub `pull_request` events. The default entrypoint reads the event context from the GitHub Actions environment, uses `GITHUB_TOKEN` to fetch changed files and patches, constructs a `PullRequestContext`, and then enters the existing review pipeline. This README only describes behavior that is implemented today.
@@ -74,7 +76,7 @@ Not implemented in current checked-in runtime:
 
 ## Repository Structure
 
-The implementation follows the module boundaries defined in [`AGENTS.md`](/E:/牛牛/AGENTS.md):
+The implementation follows the module boundaries defined in [`AGENTS.md`](./AGENTS.md):
 
 ```text
 src/
@@ -91,9 +93,9 @@ demo/
 docs/
 ```
 
-Architecture details: [docs/architecture.md](/E:/牛牛/docs/architecture.md)
+Architecture details: [docs/architecture.md](./docs/architecture.md)
 
-Demo walkthrough: [docs/demo-guide.md](/E:/牛牛/docs/demo-guide.md)
+Demo walkthrough: [docs/demo-guide.md](./docs/demo-guide.md)
 
 ## Installation And Local Verification
 
@@ -131,7 +133,7 @@ npm.cmd run build
 
 The repository is packaged as a Node 20 GitHub Action:
 
-- action metadata: [`action.yml`](/E:/牛牛/action.yml)
+- action metadata: [`action.yml`](./action.yml)
 - built entrypoint: `dist/src/main.js`
 - action input: `openai_api_key`
 
@@ -197,7 +199,7 @@ Why `contents: read`:
 
 Repository-level config file: `.ai-pr-review.yml`
 
-If the file is missing, the project uses these defaults from [`src/config/schema.ts`](/E:/牛牛/src/config/schema.ts):
+If the file is missing, the project uses these defaults from [`src/config/schema.ts`](./src/config/schema.ts):
 
 ```yml
 language: zh-CN
@@ -269,7 +271,7 @@ Validation rules implemented today:
 - `review.confidence_threshold` must be between `0` and `1`
 - user `exclude` patterns are merged on top of default exclude patterns
 
-Current exclude matching is intentionally limited to what is implemented in [`src/diff/filterFiles.ts`](/E:/牛牛/src/diff/filterFiles.ts):
+Current exclude matching is intentionally limited to what is implemented in [`src/diff/filterFiles.ts`](./src/diff/filterFiles.ts):
 
 - exact path matches
 - directory-prefix patterns ending in `/**`
@@ -309,7 +311,7 @@ Fork-pull-request behavior to expect:
 
 ### Prompt Strategy
 
-The OpenAI client in [`src/llm/client.ts`](/E:/牛牛/src/llm/client.ts) currently:
+The OpenAI client in [`src/llm/client.ts`](./src/llm/client.ts) currently:
 
 - sends a system instruction that demands JSON only
 - includes a fixed schema shape for `summary_findings` and `inline_findings`
@@ -423,7 +425,7 @@ External services used by the implemented flow:
 
 ## Demo Fixtures
 
-Available fixtures under [`demo/fixtures`](/E:/牛牛/demo/fixtures):
+Available fixtures under [`demo/fixtures`](./demo/fixtures):
 
 - `pr-1-auth-bug`
 - `pr-2-react-effect-bug`
@@ -435,9 +437,9 @@ Each fixture has:
 - a `.diff` file
 - a matching `.expected.json`
 
-These fixtures are validated by [`test/unit/fixtures/demoFixtures.test.ts`](/E:/牛牛/test/unit/fixtures/demoFixtures.test.ts).
+These fixtures are validated by [`test/unit/fixtures/demoFixtures.test.ts`](./test/unit/fixtures/demoFixtures.test.ts).
 
-Demo usage guidance: [docs/demo-guide.md](/E:/牛牛/docs/demo-guide.md)
+Demo usage guidance: [docs/demo-guide.md](./docs/demo-guide.md)
 
 ## Risks And Limitations
 
@@ -462,6 +464,6 @@ These are not implemented today:
 
 ## Documentation Map
 
-- project overview and setup: [`README.md`](/E:/牛牛/README.md)
-- module boundaries and data flow: [docs/architecture.md](/E:/牛牛/docs/architecture.md)
-- demo scenarios and checklist: [docs/demo-guide.md](/E:/牛牛/docs/demo-guide.md)
+- project overview and setup: [`README.md`](./README.md)
+- module boundaries and data flow: [docs/architecture.md](./docs/architecture.md)
+- demo scenarios and checklist: [docs/demo-guide.md](./docs/demo-guide.md)
