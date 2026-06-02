@@ -9,14 +9,22 @@ import { buildReviewContext } from './context/buildReviewContext';
 import { filterPullRequestFiles } from './diff/filterFiles';
 import { publishDeterministicSummary } from './review/publishSummary';
 import {
+  createOpenAiReviewClientFromEnvironment,
+  type LlmReviewClient,
+  type StructuredReviewResult
+} from './llm/client';
+import { parseStructuredReview } from './llm/parseReview';
+import {
   loadReviewerConfig
 } from './config/loadConfig';
 import type { ReviewerConfig } from './config/schema';
+import type { SummaryAiReview } from './review/formatSummary';
 
 export interface RunOptions {
   logger?: Logger;
   startup?: () => Promise<PullRequestContext | void>;
   createCommentsClient?: () => GitHubCommentsClient | null;
+  createLlmClient?: () => LlmReviewClient;
   loadConfig?: () => ReviewerConfig;
 }
 
@@ -24,6 +32,7 @@ export interface RunDeterministicSummaryWorkflowOptions {
   logger?: Logger;
   pullRequestContext: PullRequestContext;
   commentsClient: GitHubCommentsClient;
+  llmClient: LlmReviewClient;
   config: ReviewerConfig;
 }
 
@@ -46,16 +55,21 @@ export async function runDeterministicSummaryWorkflow(
     excludedFiles: filteredFiles.excludedFiles,
     config: options.config
   });
+  const aiReview = await buildSummaryAiReview({
+    llmClient: options.llmClient,
+    reviewContext
+  });
   const result = await publishDeterministicSummary({
     metadata: options.pullRequestContext.metadata,
     includedFiles: filteredFiles.includedFiles,
     excludedFiles: filteredFiles.excludedFiles,
     reviewContext: reviewContext.metadata,
+    aiReview,
     client: options.commentsClient
   });
 
   logger.info(
-    `Deterministic pre-LLM summary comment ${result.action} for PR #${options.pullRequestContext.metadata.pullNumber}.`
+    `Summary review comment ${result.action} for PR #${options.pullRequestContext.metadata.pullNumber}.`
   );
 
   return result;
@@ -66,6 +80,8 @@ export async function run(options: RunOptions = {}): Promise<void> {
   const startup = options.startup ?? defaultStartup;
   const createCommentsClient =
     options.createCommentsClient ?? createGitHubCommentsClientFromEnvironment;
+  const createLlmClient =
+    options.createLlmClient ?? createOpenAiReviewClientFromEnvironment;
   const getReviewerConfig = options.loadConfig ?? loadReviewerConfig;
 
   logger.info('Action starting.');
@@ -82,6 +98,7 @@ export async function run(options: RunOptions = {}): Promise<void> {
           logger,
           pullRequestContext,
           commentsClient,
+          llmClient: createLlmClient(),
           config
         });
       } else {
@@ -102,4 +119,51 @@ if (require.main === module) {
   run().catch(() => {
     process.exitCode = 1;
   });
+}
+
+async function buildSummaryAiReview(options: {
+  llmClient: LlmReviewClient;
+  reviewContext: Awaited<ReturnType<typeof buildReviewContext>>;
+}): Promise<SummaryAiReview> {
+  const llmResult = await options.llmClient.requestStructuredReview({
+    reviewContext: options.reviewContext
+  });
+
+  if (llmResult.status === 'success') {
+    return parseSummaryAiReview(llmResult);
+  }
+
+  if (llmResult.status === 'skipped') {
+    return {
+      status: 'skipped',
+      code: llmResult.code,
+      message: llmResult.message
+    };
+  }
+
+  return {
+    status: 'degraded',
+    code: llmResult.code,
+    message: llmResult.message
+  };
+}
+
+function parseSummaryAiReview(
+  llmResult: Extract<StructuredReviewResult, { status: 'success' }>
+): SummaryAiReview {
+  const parsedReview = parseStructuredReview(llmResult.outputText);
+
+  if (!parsedReview.ok) {
+    return {
+      status: 'degraded',
+      code: parsedReview.error.code,
+      message:
+        'AI review degraded because the provider returned malformed structured JSON. Raw model output was discarded.'
+    };
+  }
+
+  return {
+    status: 'completed',
+    findings: parsedReview.summaryFindings
+  };
 }

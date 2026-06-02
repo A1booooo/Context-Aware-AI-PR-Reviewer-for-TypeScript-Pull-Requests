@@ -21,7 +21,7 @@ function formatDeterministicSummaryComment(options) {
     const lines = [
         exports.DETERMINISTIC_SUMMARY_MARKER,
         '## PR Summary',
-        'This is a deterministic pre-LLM summary. It does not include AI review findings.',
+        'This summary publishes validated AI findings when available. Raw model output is never published.',
         '',
         `PR: #${options.metadata.pullNumber} ${options.metadata.title}`,
         `Changed files count: ${changedFilesCount}`,
@@ -65,6 +65,34 @@ function formatDeterministicSummaryComment(options) {
         lines.push(`- full file context reason: ${options.reviewContext.fullFileContext.reason}`);
         lines.push(`- metadata notes count: ${options.reviewContext.notes.length}`);
     }
+    lines.push('', 'AI review status:');
+    if (!options.aiReview) {
+        lines.push('- not requested');
+    }
+    else if (options.aiReview.status === 'completed') {
+        lines.push('- status: completed');
+        lines.push(`- validated summary findings count: ${options.aiReview.findings.length}`);
+    }
+    else {
+        lines.push(`- status: ${options.aiReview.status}`);
+        lines.push(`- reason: ${options.aiReview.code}`);
+        lines.push(`- details: ${options.aiReview.message}`);
+    }
+    lines.push('', 'Validated AI findings:');
+    if (!options.aiReview || options.aiReview.status !== 'completed') {
+        lines.push('- none');
+    }
+    else if (options.aiReview.findings.length === 0) {
+        lines.push('- none');
+    }
+    else {
+        for (const finding of sortSummaryFindings(options.aiReview.findings)) {
+            lines.push(`- [${finding.severity}] ${finding.title} (confidence ${finding.confidence.toFixed(2)})`);
+            if (finding.description) {
+                lines.push(`  ${finding.description}`);
+            }
+        }
+    }
     return lines.join('\n');
 }
 function summarizeExcludedReasons(excludedFiles) {
@@ -73,4 +101,21 @@ function summarizeExcludedReasons(excludedFiles) {
         counts.set(file.reason, (counts.get(file.reason) ?? 0) + 1);
     }
     return EXCLUDED_REASON_ORDER.filter((reason) => counts.has(reason)).map((reason) => `- ${reason}: ${counts.get(reason)}`);
+}
+function sortSummaryFindings(findings) {
+    return [...findings].sort((left, right) => {
+        if (left.severity !== right.severity) {
+            return compareSeverity(left.severity, right.severity);
+        }
+        return right.confidence - left.confidence;
+    });
+}
+function compareSeverity(left, right) {
+    const severityRank = {
+        critical: 0,
+        high: 1,
+        medium: 2,
+        low: 3
+    };
+    return severityRank[left] - severityRank[right];
 }

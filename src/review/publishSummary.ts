@@ -8,7 +8,8 @@ import type { PullRequestMetadata } from '../github/pr';
 
 import {
   DETERMINISTIC_SUMMARY_MARKER,
-  formatDeterministicSummaryComment
+  formatDeterministicSummaryComment,
+  type SummaryAiReview
 } from './formatSummary';
 
 export interface PublishDeterministicSummaryOptions {
@@ -16,6 +17,7 @@ export interface PublishDeterministicSummaryOptions {
   includedFiles: IncludedDiffFile[];
   excludedFiles: ExcludedDiffFile[];
   reviewContext?: ReviewContextMetadata;
+  aiReview?: SummaryAiReview;
   client: GitHubCommentsClient;
 }
 
@@ -26,7 +28,8 @@ export async function publishDeterministicSummary(
     metadata: options.metadata,
     includedFiles: options.includedFiles,
     excludedFiles: options.excludedFiles,
-    reviewContext: options.reviewContext
+    reviewContext: options.reviewContext,
+    aiReview: options.aiReview
   });
 
   return upsertPullRequestCommentByMarker({
