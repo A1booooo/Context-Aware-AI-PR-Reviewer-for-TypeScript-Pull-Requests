@@ -135,7 +135,7 @@ The repository is packaged as a Node 20 GitHub Action:
 
 - action metadata: [`action.yml`](./action.yml)
 - built entrypoint: `dist/src/main.js`
-- action input: `openai_api_key`
+- action inputs: `openai_api_key`, `llm_api_url`, `llm_model`
 
 Current action metadata:
 
@@ -145,6 +145,12 @@ description: Minimal TypeScript GitHub Action scaffold for pull request review s
 inputs:
   openai_api_key:
     description: OpenAI API key for summary-only AI review
+    required: false
+  llm_api_url:
+    description: Optional API URL override for OpenAI-compatible providers
+    required: false
+  llm_model:
+    description: Optional model override for OpenAI-compatible providers
     required: false
 runs:
   using: node20
@@ -185,6 +191,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
+
+Optional OpenAI-compatible provider override:
+
+```yml
+      - name: Run reviewer with a compatible provider
+        uses: your-org/ai-pr-review-assistant@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_API_URL: https://api.compatible-provider.example/v1/chat/completions
+          LLM_MODEL: compatible-model-name
+```
+
+Both overrides are optional. If they are not set, the runtime keeps using the default OpenAI Chat Completions URL and the default `gpt-4.1-mini` model. `OPENAI_API_KEY` authentication behavior is unchanged.
 
 Why `pull-requests: write`:
 
@@ -286,6 +306,8 @@ Current runtime reads secrets from environment variables:
 - `GITHUB_TOKEN`
 - `OPENAI_API_KEY`
 - fallback action input environment: `INPUT_OPENAI_API_KEY`
+- optional provider URL overrides: `LLM_API_URL`, `INPUT_LLM_API_URL`
+- optional model overrides: `LLM_MODEL`, `INPUT_LLM_MODEL`
 
 Recommended setup in GitHub:
 
@@ -317,7 +339,8 @@ The OpenAI client in [`src/llm/client.ts`](./src/llm/client.ts) currently:
 - includes a fixed schema shape for `summary_findings` and `inline_findings`
 - sends the assembled review context as the user message
 - requests `response_format.type = json_object`
-- uses model `gpt-4.1-mini`
+- uses model `gpt-4.1-mini` by default, unless `LLM_MODEL` or `INPUT_LLM_MODEL` overrides it
+- uses the OpenAI Chat Completions URL by default, unless `LLM_API_URL` or `INPUT_LLM_API_URL` overrides it
 
 The prompt strategy is intentionally conservative:
 

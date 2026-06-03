@@ -37,6 +37,10 @@ describe('createOpenAiReviewClient', () => {
   afterEach(() => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.INPUT_OPENAI_API_KEY;
+    delete process.env.LLM_API_URL;
+    delete process.env.INPUT_LLM_API_URL;
+    delete process.env.LLM_MODEL;
+    delete process.env.INPUT_LLM_MODEL;
   });
 
   it('returns model text when the provider request succeeds', async () => {
@@ -81,6 +85,9 @@ describe('createOpenAiReviewClient', () => {
     );
     expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain(
       'Structured review context:'
+    );
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain(
+      '"model":"gpt-4.1-mini"'
     );
   });
 
@@ -211,5 +218,133 @@ describe('createOpenAiReviewClient', () => {
 
     expect(requestHeaders.Authorization).toContain('preferred-key');
     expect(requestHeaders.Authorization).not.toContain('fallback-key');
+  });
+
+  it('reads the API URL override from environment', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.LLM_API_URL = 'https://api.minimax.chat/v1/text/chatcompletion_v2';
+
+    const fetchMock = vi.fn(async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"summary_findings":[],"inline_findings":[]}'
+              }
+            }
+          ]
+        })
+      } as Response;
+    });
+
+    const client = createOpenAiReviewClientFromEnvironment({
+      fetch: fetchMock
+    });
+
+    await client.requestStructuredReview({
+      reviewContext: createReviewContextFixture()
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.minimax.chat/v1/text/chatcompletion_v2'
+    );
+  });
+
+  it('reads the model override from environment', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.LLM_MODEL = 'MiniMax-Text-01';
+
+    const fetchMock = vi.fn(async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"summary_findings":[],"inline_findings":[]}'
+              }
+            }
+          ]
+        })
+      } as Response;
+    });
+
+    const client = createOpenAiReviewClientFromEnvironment({
+      fetch: fetchMock
+    });
+
+    await client.requestStructuredReview({
+      reviewContext: createReviewContextFixture()
+    });
+
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain(
+      '"model":"MiniMax-Text-01"'
+    );
+  });
+
+  it('prefers explicit API URL and model options over environment overrides', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.LLM_API_URL = 'https://env.example/v1/chat/completions';
+    process.env.LLM_MODEL = 'env-model';
+
+    const fetchMock = vi.fn(async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: '{"summary_findings":[],"inline_findings":[]}'
+              }
+            }
+          ]
+        })
+      } as Response;
+    });
+
+    const client = createOpenAiReviewClientFromEnvironment({
+      apiUrl: 'https://override.example/v1/chat/completions',
+      model: 'override-model',
+      fetch: fetchMock
+    });
+
+    await client.requestStructuredReview({
+      reviewContext: createReviewContextFixture()
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://override.example/v1/chat/completions'
+    );
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain(
+      '"model":"override-model"'
+    );
+  });
+
+  it('keeps missing API key behavior unchanged even when URL and model overrides exist', async () => {
+    process.env.LLM_API_URL = 'https://api.minimax.chat/v1/text/chatcompletion_v2';
+    process.env.LLM_MODEL = 'MiniMax-Text-01';
+
+    const fetchMock = vi.fn();
+    const client = createOpenAiReviewClientFromEnvironment({
+      fetch: fetchMock
+    });
+
+    await expect(
+      client.requestStructuredReview({
+        reviewContext: createReviewContextFixture()
+      })
+    ).resolves.toEqual({
+      status: 'skipped',
+      code: 'missing_api_key',
+      message:
+        'AI review skipped because the OpenAI API key was not available. This commonly happens when fork pull request secrets are unavailable.'
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

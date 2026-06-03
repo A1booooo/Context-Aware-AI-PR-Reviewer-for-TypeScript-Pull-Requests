@@ -39,6 +39,7 @@ export interface LlmReviewClient {
 interface CreateOpenAiReviewClientOptions {
   apiKey?: string | null;
   apiUrl?: string;
+  model?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
 }
@@ -48,7 +49,9 @@ export function createOpenAiReviewClientFromEnvironment(
 ): LlmReviewClient {
   return createOpenAiReviewClient({
     ...options,
-    apiKey: readOpenAiApiKeyFromEnvironment()
+    apiKey: readOpenAiApiKeyFromEnvironment(),
+    apiUrl: options.apiUrl ?? readLlmApiUrlFromEnvironment() ?? undefined,
+    model: options.model ?? readLlmModelFromEnvironment() ?? undefined
   });
 }
 
@@ -59,12 +62,26 @@ export function readOpenAiApiKeyFromEnvironment(): string | null {
   return apiKey ? apiKey : null;
 }
 
+export function readLlmApiUrlFromEnvironment(): string | null {
+  const apiUrl =
+    process.env.LLM_API_URL?.trim() || process.env.INPUT_LLM_API_URL?.trim();
+
+  return apiUrl ? apiUrl : null;
+}
+
+export function readLlmModelFromEnvironment(): string | null {
+  const model = process.env.LLM_MODEL?.trim() || process.env.INPUT_LLM_MODEL?.trim();
+
+  return model ? model : null;
+}
+
 export function createOpenAiReviewClient(
   options: CreateOpenAiReviewClientOptions = {}
 ): LlmReviewClient {
   const apiKey = options.apiKey?.trim() || null;
   const fetchImplementation = options.fetch ?? fetch;
-  const apiUrl = options.apiUrl ?? OPENAI_CHAT_COMPLETIONS_URL;
+  const apiUrl = options.apiUrl?.trim() || OPENAI_CHAT_COMPLETIONS_URL;
+  const model = options.model?.trim() || DEFAULT_OPENAI_MODEL;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return {
@@ -93,7 +110,7 @@ export function createOpenAiReviewClient(
             Authorization: `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            model: DEFAULT_OPENAI_MODEL,
+            model,
             response_format: {
               type: 'json_object'
             },

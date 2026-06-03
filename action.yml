@@ -4,6 +4,12 @@ inputs:
   openai_api_key:
     description: OpenAI API key for summary-only AI review
     required: false
+  llm_api_url:
+    description: Optional API URL override for OpenAI-compatible providers
+    required: false
+  llm_model:
+    description: Optional model override for OpenAI-compatible providers
+    required: false
 runs:
   using: node20
   main: dist/src/main.js

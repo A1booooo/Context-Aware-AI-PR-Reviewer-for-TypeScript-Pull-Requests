@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createOpenAiReviewClientFromEnvironment = createOpenAiReviewClientFromEnvironment;
 exports.readOpenAiApiKeyFromEnvironment = readOpenAiApiKeyFromEnvironment;
+exports.readLlmApiUrlFromEnvironment = readLlmApiUrlFromEnvironment;
+exports.readLlmModelFromEnvironment = readLlmModelFromEnvironment;
 exports.createOpenAiReviewClient = createOpenAiReviewClient;
 const OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
@@ -9,17 +11,28 @@ const DEFAULT_TIMEOUT_MS = 20000;
 function createOpenAiReviewClientFromEnvironment(options = {}) {
     return createOpenAiReviewClient({
         ...options,
-        apiKey: readOpenAiApiKeyFromEnvironment()
+        apiKey: readOpenAiApiKeyFromEnvironment(),
+        apiUrl: options.apiUrl ?? readLlmApiUrlFromEnvironment() ?? undefined,
+        model: options.model ?? readLlmModelFromEnvironment() ?? undefined
     });
 }
 function readOpenAiApiKeyFromEnvironment() {
     const apiKey = process.env.OPENAI_API_KEY?.trim() || process.env.INPUT_OPENAI_API_KEY?.trim();
     return apiKey ? apiKey : null;
 }
+function readLlmApiUrlFromEnvironment() {
+    const apiUrl = process.env.LLM_API_URL?.trim() || process.env.INPUT_LLM_API_URL?.trim();
+    return apiUrl ? apiUrl : null;
+}
+function readLlmModelFromEnvironment() {
+    const model = process.env.LLM_MODEL?.trim() || process.env.INPUT_LLM_MODEL?.trim();
+    return model ? model : null;
+}
 function createOpenAiReviewClient(options = {}) {
     const apiKey = options.apiKey?.trim() || null;
     const fetchImplementation = options.fetch ?? fetch;
-    const apiUrl = options.apiUrl ?? OPENAI_CHAT_COMPLETIONS_URL;
+    const apiUrl = options.apiUrl?.trim() || OPENAI_CHAT_COMPLETIONS_URL;
+    const model = options.model?.trim() || DEFAULT_OPENAI_MODEL;
     const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     return {
         async requestStructuredReview({ reviewContext }) {
@@ -42,7 +55,7 @@ function createOpenAiReviewClient(options = {}) {
                         Authorization: `Bearer ${apiKey}`
                     },
                     body: JSON.stringify({
-                        model: DEFAULT_OPENAI_MODEL,
+                        model,
                         response_format: {
                             type: 'json_object'
                         },
