@@ -135,7 +135,7 @@ npm.cmd run build
 
 - action metadata：[`action.yml`](./action.yml)
 - 构建后的入口：`dist/src/main.js`
-- action input：`openai_api_key`
+- action inputs：`openai_api_key`、`llm_api_url`、`llm_model`
 
 当前 action metadata：
 
@@ -145,6 +145,12 @@ description: Minimal TypeScript GitHub Action scaffold for pull request review s
 inputs:
   openai_api_key:
     description: OpenAI API key for summary-only AI review
+    required: false
+  llm_api_url:
+    description: Optional API URL override for OpenAI-compatible providers
+    required: false
+  llm_model:
+    description: Optional model override for OpenAI-compatible providers
     required: false
 runs:
   using: node20
@@ -185,6 +191,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 ```
+
+OpenAI-compatible provider 覆盖示例：
+
+```yml
+      - name: Run reviewer with a compatible provider
+        uses: your-org/ai-pr-review-assistant@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_API_URL: https://api.compatible-provider.example/v1/chat/completions
+          LLM_MODEL: compatible-model-name
+```
+
+这两个覆盖项都是可选的。不设置时，运行时仍默认使用 OpenAI Chat Completions URL 和默认模型 `gpt-4.1-mini`。`OPENAI_API_KEY` 的认证行为保持不变。
 
 为什么需要 `pull-requests: write`：
 
@@ -286,6 +306,8 @@ review:
 - `GITHUB_TOKEN`
 - `OPENAI_API_KEY`
 - action input 回退环境变量：`INPUT_OPENAI_API_KEY`
+- 可选 provider URL 覆盖：`LLM_API_URL`、`INPUT_LLM_API_URL`
+- 可选 model 覆盖：`LLM_MODEL`、`INPUT_LLM_MODEL`
 
 GitHub 中推荐的配置方式：
 
@@ -317,7 +339,8 @@ GitHub 中推荐的配置方式：
 - 为 `summary_findings` 和 `inline_findings` 提供固定 schema 形状
 - 将拼装好的 review context 作为 user message 发送
 - 请求 `response_format.type = json_object`
-- 使用 `gpt-4.1-mini` 模型
+- 默认使用 `gpt-4.1-mini` 模型，除非通过 `LLM_MODEL` 或 `INPUT_LLM_MODEL` 覆盖
+- 默认使用 OpenAI Chat Completions URL，除非通过 `LLM_API_URL` 或 `INPUT_LLM_API_URL` 覆盖
 
 Prompt 策略刻意保持保守：
 
